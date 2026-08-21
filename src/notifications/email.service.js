@@ -35,12 +35,12 @@ function getTransporter() {
  * @param {Array<{job: object, fingerprint: string, evaluation: object, dispatchMeta: object}>} batch
  * @returns {Promise<{ success: boolean, messageId?: string, simulated?: boolean, error?: string, count: number }>}
  */
-async function sendBatch(batch = []) {
+async function sendBatch(batch = [], sendIfEmpty = false) {
   const recipient = config.smtp.receiverEmail || config.candidateEmail;
   const count = batch.length;
 
-  if (count === 0) {
-    return { success: true, count: 0, reason: "No jobs in batch" };
+  if (count === 0 && !sendIfEmpty) {
+    return { success: true, count: 0, reason: "No new jobs in this run" };
   }
 
   const emailPayload = renderSummaryEmail(batch, config.timezone, config.candidateName);

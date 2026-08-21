@@ -148,10 +148,7 @@ async function runScanCycle() {
       const dispatchResult = await dispatchNotificationBatch(qualifiedJobs);
       console.log(`🚀 [Dispatch Result] Batch ID: ${dispatchResult.batchId} | Status: ${dispatchResult.overallStatus}`);
     } else {
-      console.log(`ℹ️ [No New Jobs] 0 new matching jobs in this cycle. Sending clean status report email...`);
-      const emptyPayload = renderSummaryEmail([], config.timezone, candidateProfile.name || config.candidateName);
-      const emailService = require("./notifications/email.service");
-      await emailService.sendBatch([{ job: { jobId: "none" }, evaluation: {}, dispatchMeta: {} }]);
+      console.log(`ℹ️ [No New Jobs] 0 new matching jobs in this cycle. Next scan in ${config.scheduleIntervalMinutes || 55} minutes.`);
     }
 
     // Update state
