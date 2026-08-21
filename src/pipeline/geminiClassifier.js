@@ -77,16 +77,20 @@ ${job.description.substring(0, 3500)}
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-async function classifyJobWithGemini(job, retryCount = 3) {
+async function classifyJobWithGemini(job, retryCount = 2) {
   const apiKey = (config.geminiApiKey || "").trim();
   const model = config.geminiModel || "gemini-3.6-flash";
 
-  if (!apiKey || apiKey === "your_gemini_api_key_here") {
+  const fullText = `${job.title} ${job.description}`.toLowerCase();
+  const hasCoreTech = fullText.includes("java") || fullText.includes("spring") || fullText.includes("react");
+
+  // If role doesn't have core keywords, evaluate with fast deterministic heuristic in 0ms
+  if (!hasCoreTech || !apiKey || apiKey === "your_gemini_api_key_here") {
     return generateFallbackEvaluation(job);
   }
 
-  // Pacing delay to remain strictly within free-tier Rate Limits
-  await sleep(3500);
+  // Pacing delay for genuine candidates
+  await sleep(1500);
 
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
   const requestPayload = {
