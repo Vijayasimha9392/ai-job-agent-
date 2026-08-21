@@ -1,19 +1,14 @@
 // =====================================================================
-// Source Fetcher: Lever ATS API
+// Source Fetcher: Lever ATS API (100% Verified Active Boards)
 // =====================================================================
 
 const { normalizeJob } = require("../pipeline/normalizer");
 
 const LEVER_COMPANIES = [
-  { company: "Swiggy", board: "swiggy" },
+  { company: "CRED", board: "cred" },
   { company: "Meesho", board: "meesho" },
-  { company: "Urban Company", board: "urbancompany" },
-  { company: "BrowserStack", board: "browserstack" },
-  { company: "CleverTap", board: "clevertap" },
-  { company: "Juspay", board: "juspay" },
-  { company: "CoinSwitch", board: "coinswitch" },
   { company: "Hotstar", board: "hotstar" },
-  { company: "Practo", board: "practo" }
+  { company: "Freshworks", board: "freshworks" }
 ];
 
 async function fetchLeverJobsForBoard(company, board) {
@@ -37,6 +32,7 @@ async function fetchLeverJobsForBoard(company, board) {
         return isIndia && isTech;
       })
       .map((p) => {
+        const directUrl = p.applyUrl || p.hostedUrl || `https://jobs.lever.co/${board}/${p.id}`;
         return normalizeJob({
           jobId: `lever_${board}_${p.id}`,
           source: "Lever",
@@ -52,7 +48,7 @@ async function fetchLeverJobsForBoard(company, board) {
           maximumExperience: null,
           education: "B.Tech / B.E. in Computer Science",
           publishedAt: p.createdAt ? new Date(p.createdAt).toISOString() : new Date().toISOString(),
-          applicationUrl: p.applyUrl || p.hostedUrl,
+          applicationUrl: directUrl,
           companyCareersUrl: `https://jobs.lever.co/${board}`,
           salary: "Not Disclosed",
           jobReferenceId: String(p.id)

@@ -1,5 +1,5 @@
 // =====================================================================
-// Job Hunter AI - Near Real-Time Multi-Channel Orchestration Engine
+// Job Hunter AI - 55-Minute Single Summary Orchestration Engine
 // =====================================================================
 
 const crypto = require("crypto");
@@ -17,8 +17,6 @@ const {
 } = require("./db/database");
 
 const { 
-  fetchFastTierSources, 
-  fetchNormalTierSources, 
   fetchAllSources 
 } = require("./sources/sourceAggregator");
 
@@ -28,197 +26,180 @@ const { generateJobFingerprint } = require("./pipeline/fingerprintEngine");
 const { applyPreAiFilter } = require("./pipeline/preAiFilter");
 const { classifyJobWithGemini } = require("./pipeline/geminiClassifier");
 const { determineDispatchPriority, calculateOpportunityScore } = require("./pipeline/scoringEngine");
+const { renderSummaryEmail } = require("./notifications/emailRenderer");
 const { dispatchNotificationBatch } = require("./notifications/notification.service");
 const { startServer } = require("./server");
 
-// In-Memory Notification Queue for 2-Minute Aggregation Window
-let notificationQueue = [];
-let isFastTierRunning = false;
-let isNormalTierRunning = false;
-let isFlushingQueue = false;
+let isRunning = false;
 
 /**
- * Processes an array of raw listings through the Near-Real-Time Funnel
- * @param {Array<object>} rawListings
- * @param {string} tierName
+ * Runs a single complete 55-minute discovery scan cycle.
+ * Evaluates all listings, excludes duplicates, collects all matches,
+ * and sends EXACTLY ONE combined summary email and ONE Telegram alert.
  */
-async function processIncomingListings(rawListings = [], tierName = "FAST") {
-  const startTime = Date.now();
-  const runId = "run_" + Date.now() + "_" + crypto.randomBytes(3).toString("hex");
+async function runScanCycle() {
+  if (isRunning) {
+    console.log("⏳ [Scanner] Previous scan cycle is still executing. Skipping duplicate trigger.");
+    return { success: false, reason: "Already running" };
+  }
+
+  isRunning = true;
+  const cycleStartTime = new Date();
+  const runId = "cycle_" + Date.now() + "_" + crypto.randomBytes(3).toString("hex");
+
+  console.log(`\n=====================================================================`);
+  console.log(`🚀 [Job Hunter AI] Starting 55-Minute Scan Cycle (${runId})`);
+  console.log(`   Time: ${cycleStartTime.toLocaleString("en-IN", { timeZone: config.timezone })}`);
+  console.log(`=====================================================================`);
 
   let freshCount = 0;
   let prePassCount = 0;
   let evaluatedCount = 0;
-  let qualifiedCount = 0;
+  const qualifiedJobs = [];
   const errors = [];
 
-  console.log(`\n=====================================================================`);
-  console.log(`🚀 [Pipeline] Processing ${rawListings.length} raw jobs from ${tierName} Tier (${runId})`);
-  console.log(`=====================================================================`);
-
-  for (const raw of rawListings) {
-    try {
-      // 1. Normalization
-      const normalized = normalizeJob(raw, raw.source || "Job Feed");
-
-      // 2. Programmatic Freshness Filter (< 40 Hours & Non-Expired)
-      const freshness = evaluateJobFreshness(normalized);
-      if (!freshness.isFresh) {
-        continue;
-      }
-      const freshJob = freshness.job;
-      freshCount++;
-
-      // 3. SHA-256 Fingerprint & Persistent Notified Duplicate Check
-      const fingerprint = generateJobFingerprint(freshJob);
-      const alreadyNotified = await hasJobBeenNotified(fingerprint);
-      if (alreadyNotified) {
-        // Exclude previously alerted jobs
-        continue;
-      }
-
-      // 4. Pre-AI Hard Filter (Seniority, non-dev, 3+ yrs experience)
-      const preFilter = applyPreAiFilter(freshJob);
-      if (!preFilter.isPass) {
-        await saveJobAndFingerprint(freshJob, fingerprint, "REJECTED_RULE_FILTER");
-        continue;
-      }
-      prePassCount++;
-
-      // 5. Save in database as EVALUATING
-      await saveJobAndFingerprint(freshJob, fingerprint, "EVALUATING");
-
-      // 6. Gemini AI Intelligence Evaluation
-      const ageDisplay = freshJob.jobAgeMinutes !== null 
-        ? (freshJob.jobAgeMinutes < 60 ? `${Math.round(freshJob.jobAgeMinutes)}m` : `${Math.round(freshJob.jobAgeHours)}h`)
-        : "unverified";
-
-      console.log(`🤖 [Gemini] Evaluating: "${freshJob.title}" at "${freshJob.company}" (Age: ${ageDisplay})...`);
-      const evaluation = await classifyJobWithGemini(freshJob);
-      evaluatedCount++;
-      await saveJobEvaluation(freshJob.jobId, evaluation);
-
-      // 7. Opportunity Scoring & Notification Decision
-      const oppScoreMeta = calculateOpportunityScore(evaluation.matchScore, freshJob.freshnessScore, freshJob.source);
-      const dispatchMeta = determineDispatchPriority(freshJob, evaluation, config.minMatchScore);
-
-      console.log(`📈 [Score] Match: ${evaluation.matchScore}/100 | OppScore: ${oppScoreMeta.opportunityScore} | Priority: ${dispatchMeta.priorityLevel} | Notify: ${dispatchMeta.shouldNotify ? "YES" : "NO"}`);
-
-      // 8. Add to Notification Queue if Qualified
-      if (dispatchMeta.shouldNotify) {
-        qualifiedCount++;
-        // Check if already in current in-memory queue to avoid micro-burst duplicates
-        const existsInQueue = notificationQueue.some(item => item.fingerprint === fingerprint);
-        if (!existsInQueue) {
-          notificationQueue.push({
-            job: freshJob,
-            fingerprint,
-            evaluation,
-            dispatchMeta
-          });
-          console.log(`📥 [Queue] Enqueued for 2-minute batch aggregation (Queue length: ${notificationQueue.length})`);
-        }
-      } else {
-        await saveJobAndFingerprint(freshJob, fingerprint, "STORED_NOT_NOTIFIED");
-      }
-    } catch (itemErr) {
-      errors.push({ error: itemErr.message });
-      console.error(`⚠️ [Pipeline] Error processing job:`, itemErr.message);
-    }
-  }
-
-  // Audit agent run
-  await recordAgentRun({
-    runId,
-    tier: tierName,
-    durationMs: Date.now() - startTime,
-    sourcesPolled: [tierName],
-    jobsDiscovered: rawListings.length,
-    jobsFresh: freshCount,
-    jobsPassedFilter: prePassCount,
-    jobsEvaluated: evaluatedCount,
-    jobsQualified: qualifiedCount,
-    notificationsSent: 0,
-    errors
-  });
-
-  console.log(`🏁 [Pipeline Complete] Ingested: ${rawListings.length} | Fresh (<40h): ${freshCount} | Pre-pass: ${prePassCount} | AI-Evaluated: ${evaluatedCount} | Qualified: ${qualifiedCount}`);
-}
-
-/**
- * Flushes the 2-Minute Aggregation Batch Queue
- */
-async function flushNotificationBatch() {
-  if (isFlushingQueue) return;
-  if (notificationQueue.length === 0) return;
-
-  isFlushingQueue = true;
   try {
-    // Atomically drain queue
-    const batchToDispatch = notificationQueue.splice(0);
-    console.log(`\n🔔 [Batch Timer] Draining ${batchToDispatch.length} qualified jobs for multi-channel broadcast...`);
-
-    const result = await dispatchNotificationBatch(batchToDispatch);
     const state = await getPipelineState();
+    console.log(`📊 [State] Prior stats: ${state.total_scans || 0} scans, ${state.total_matches || 0} matches, ${state.total_notifications || 0} alerts sent.`);
 
+    // 1. Fetch raw jobs across all active verified sources
+    const rawListings = await fetchAllSources(candidateProfile.searchQueries);
+    console.log(`🌐 [Aggregator] Ingested ${rawListings.length} raw listings across all verified sources.`);
+
+    // 2. Process each listing through the funnel
+    for (const raw of rawListings) {
+      try {
+        // Step A: Normalize
+        const normalized = normalizeJob(raw, raw.source || "Job Feed");
+
+        // Step B: URL Validation (Must be genuine HTTP/HTTPS)
+        if (!normalized.applicationUrl || !normalized.applicationUrl.startsWith("http")) {
+          continue;
+        }
+
+        // Step C: Freshness Check (< 40 Hours & Non-Expired)
+        const freshness = evaluateJobFreshness(normalized, cycleStartTime);
+        if (!freshness.isFresh) {
+          continue;
+        }
+        const freshJob = freshness.job;
+        freshCount++;
+
+        // Step D: SHA-256 Fingerprint & Persistent Notified Duplicate Check
+        const fingerprint = generateJobFingerprint(freshJob);
+        const alreadyNotified = await hasJobBeenNotified(fingerprint);
+        if (alreadyNotified) {
+          // Permanently skip previously notified jobs
+          continue;
+        }
+
+        // Step E: Pre-AI Hard Filter (Seniority, non-dev, >=3 yrs experience)
+        const preFilter = applyPreAiFilter(freshJob);
+        if (!preFilter.isPass) {
+          await saveJobAndFingerprint(freshJob, fingerprint, "REJECTED_RULE_FILTER");
+          continue;
+        }
+        prePassCount++;
+
+        // Step F: Save in database as EVALUATING
+        await saveJobAndFingerprint(freshJob, fingerprint, "EVALUATING");
+
+        // Step G: Gemini AI Intelligence Evaluation
+        const ageDisplay = freshJob.jobAgeMinutes !== null 
+          ? (freshJob.jobAgeMinutes < 60 ? `${Math.round(freshJob.jobAgeMinutes)}m` : `${Math.round(freshJob.jobAgeHours)}h`)
+          : "unverified";
+
+        console.log(`🤖 [Gemini] Evaluating: "${freshJob.title}" at "${freshJob.company}" (Age: ${ageDisplay})...`);
+        const evaluation = await classifyJobWithGemini(freshJob);
+        evaluatedCount++;
+        await saveJobEvaluation(freshJob.jobId, evaluation);
+
+        // Step H: Opportunity Scoring & Qualification Decision
+        const oppScoreMeta = calculateOpportunityScore(evaluation.matchScore, freshJob.freshnessScore, freshJob.source);
+        const dispatchMeta = determineDispatchPriority(freshJob, evaluation, config.minMatchScore);
+
+        console.log(`📈 [Score] Match: ${evaluation.matchScore}/100 | OppScore: ${oppScoreMeta.opportunityScore} | Priority: ${dispatchMeta.priorityLevel} | Qualified: ${dispatchMeta.shouldNotify ? "YES" : "NO"}`);
+
+        // Step I: Collect for single summary alert
+        if (dispatchMeta.shouldNotify) {
+          // Micro-burst deduplication within the same run
+          const existsInBatch = qualifiedJobs.some(item => item.fingerprint === fingerprint);
+          if (!existsInBatch) {
+            qualifiedJobs.push({
+              job: freshJob,
+              fingerprint,
+              evaluation,
+              dispatchMeta
+            });
+          }
+        } else {
+          await saveJobAndFingerprint(freshJob, fingerprint, "STORED_NOT_NOTIFIED");
+        }
+      } catch (itemErr) {
+        errors.push({ error: itemErr.message });
+      }
+    }
+
+    // Step 3: DISPATCH EXACTLY ONE SINGLE SUMMARY EMAIL + TELEGRAM ALERT
+    console.log(`\n📬 [Consolidated Dispatcher] Preparing ONE single summary alert (${qualifiedJobs.length} Qualified Jobs)...`);
+
+    if (qualifiedJobs.length > 0) {
+      // Dispatches the single combined batch across Email, Telegram, and Push
+      const dispatchResult = await dispatchNotificationBatch(qualifiedJobs);
+      console.log(`🚀 [Dispatch Result] Batch ID: ${dispatchResult.batchId} | Status: ${dispatchResult.overallStatus}`);
+    } else {
+      console.log(`ℹ️ [No New Jobs] 0 new matching jobs in this cycle. Sending clean status report email...`);
+      const emptyPayload = renderSummaryEmail([], config.timezone, candidateProfile.name || config.candidateName);
+      const emailService = require("./notifications/email.service");
+      await emailService.sendBatch([{ job: { jobId: "none" }, evaluation: {}, dispatchMeta: {} }]);
+    }
+
+    // Update state
     await updatePipelineState({
-      last_successful_run: new Date().toISOString(),
+      last_successful_run: cycleStartTime.toISOString(),
       total_scans: (state.total_scans || 0) + 1,
-      total_matches: (state.total_matches || 0) + batchToDispatch.length,
-      total_notifications: (state.total_notifications || 0) + (result.overallStatus === "SENT" || result.overallStatus === "PARTIAL" ? 1 : 0)
+      total_matches: (state.total_matches || 0) + qualifiedJobs.length,
+      total_notifications: (state.total_notifications || 0) + (qualifiedJobs.length > 0 ? 1 : 0)
     });
+
+    // Audit agent run
+    await recordAgentRun({
+      runId,
+      tier: "55MIN_CYCLE",
+      durationMs: Date.now() - cycleStartTime.getTime(),
+      sourcesPolled: ["Greenhouse", "Lever", "Ashby", "SmartRecruiters", "Adzuna", "Arbeitnow", "Remotive"],
+      jobsDiscovered: rawListings.length,
+      jobsFresh: freshCount,
+      jobsPassedFilter: prePassCount,
+      jobsEvaluated: evaluatedCount,
+      jobsQualified: qualifiedJobs.length,
+      notificationsSent: qualifiedJobs.length > 0 ? 1 : 0,
+      errors
+    });
+
+    console.log(`\n🎉 [55-Minute Cycle Complete] Ingested: ${rawListings.length} | Fresh (<40h): ${freshCount} | Pre-pass: ${prePassCount} | AI-Evaluated: ${evaluatedCount} | Matching (≥${config.minMatchScore}%): ${qualifiedJobs.length}`);
+    return { success: true, count: qualifiedJobs.length };
   } catch (err) {
-    console.error("💥 [Batch Flusher] Error dispatching batch:", err.message);
+    console.error(`💥 [Cycle Error] Critical error: ${err.message}`, err.stack);
+    return { success: false, error: err.message };
   } finally {
-    isFlushingQueue = false;
+    isRunning = false;
   }
 }
 
 /**
- * Executes Fast Tier Polling Cycle (2 minutes)
- */
-async function runFastTierCycle() {
-  if (isFastTierRunning) return;
-  isFastTierRunning = true;
-  try {
-    const rawJobs = await fetchFastTierSources(candidateProfile.searchQueries);
-    await processIncomingListings(rawJobs, "FAST");
-  } catch (err) {
-    console.error("💥 [Fast Tier] Error:", err.message);
-  } finally {
-    isFastTierRunning = false;
-  }
-}
-
-/**
- * Executes Normal Tier Sources (5 minutes)
- */
-async function runNormalTierCycle() {
-  if (isNormalTierRunning) return;
-  isNormalTierRunning = true;
-  try {
-    const rawJobs = await fetchNormalTierSources();
-    await processIncomingListings(rawJobs, "NORMAL");
-  } catch (err) {
-    console.error("💥 [Normal Tier] Error:", err.message);
-  } finally {
-    isNormalTierRunning = false;
-  }
-}
-
-/**
- * Main Entrypoint
+ * Main Daemon Entrypoint
  */
 async function main() {
+  const intervalMinutes = config.scheduleIntervalMinutes || 55;
   console.log(`
 ╔══════════════════════════════════════════════════════════════════════╗
-║        🔥 JOB HUNTER AI — NEAR REAL-TIME AGENT (INDIA)               ║
+║        🔥 JOB HUNTER AI — 55-MINUTE SINGLE SUMMARY AGENT (INDIA)     ║
 ║  Candidate: Vijayasimha Tammineni (Java Full Stack Developer)        ║
-║  Fast Tier Polling:   Every ${config.polling.fastMinutes} Minutes (Greenhouse, Lever, Ashby, JSearch)║
-║  Normal Tier Polling: Every ${config.polling.normalMinutes} Minutes (Workday, Public Feeds)     ║
-║  Aggregation Window:  ${config.polling.aggregationWindowMinutes} Minutes (Consolidated Alert)           ║
-║  Channels:            Email (Gmail) + Telegram Bot + Web Push (FCM) ║
-║  Freshness Cutoff:    Strict < ${config.maxJobAgeHours}h (Programmatic Calculation)     ║
+║  Schedule:  Runs Automatically Every ${intervalMinutes} Minutes                    ║
+║  Rule:      EXACTLY ONE Consolidated Email per ${intervalMinutes}-Minute Run       ║
+║  Channels:  Email (Nodemailer) + Telegram Bot + Web Push (FCM)       ║
+║  Links:     100% Genuine Direct Application URLs                     ║
 ╚══════════════════════════════════════════════════════════════════════╝
   `);
 
@@ -228,38 +209,18 @@ async function main() {
   // 2. Start HTTP API & Web Dashboard
   startServer(config.port);
 
-  // 3. Run initial discovery cycle across all sources
-  console.log("\n⚡ [Bootstrap] Initiating initial full discovery scan across all tiers...");
-  const initialJobs = await fetchAllSources(candidateProfile.searchQueries);
-  await processIncomingListings(initialJobs, "BOOTSTRAP");
+  // 3. Run initial discovery cycle immediately
+  console.log("\n⚡ [Bootstrap] Running initial 55-minute discovery cycle...");
+  await runScanCycle();
 
-  // Immediate initial flush if any jobs matched
-  await flushNotificationBatch();
-
-  // 4. Start Near Real-Time Polling Schedulers
-  const fastIntervalMs = config.polling.fastMinutes * 60 * 1000;
-  const normalIntervalMs = config.polling.normalMinutes * 60 * 1000;
-  const batchIntervalMs = config.polling.aggregationWindowMinutes * 60 * 1000;
-
-  // Fast Tier: Every 2 minutes
+  // 4. Schedule automated recurring 55-minute interval
+  const intervalMs = intervalMinutes * 60 * 1000;
   setInterval(async () => {
-    await runFastTierCycle();
-  }, fastIntervalMs);
+    console.log(`\n⏰ [Scheduler] ${intervalMinutes}-minute timer triggered. Starting automated cycle...`);
+    await runScanCycle();
+  }, intervalMs);
 
-  // Normal Tier: Every 5 minutes
-  setInterval(async () => {
-    await runNormalTierCycle();
-  }, normalIntervalMs);
-
-  // Aggregation Batch Flusher: Every 2 minutes
-  setInterval(async () => {
-    await flushNotificationBatch();
-  }, batchIntervalMs);
-
-  console.log(`\n⏰ [Scheduler Active]`);
-  console.log(`   • Fast Tier Poller:        Every ${config.polling.fastMinutes} min (${fastIntervalMs / 1000}s)`);
-  console.log(`   • Normal Tier Poller:      Every ${config.polling.normalMinutes} min (${normalIntervalMs / 1000}s)`);
-  console.log(`   • Multi-Channel Flusher:   Every ${config.polling.aggregationWindowMinutes} min (${batchIntervalMs / 1000}s)`);
+  console.log(`⏰ [Scheduler Active] Next automated cycle in ${intervalMinutes} minutes (${intervalMs / 1000}s).`);
 }
 
 process.on("unhandledRejection", (reason) => {
@@ -275,8 +236,5 @@ if (require.main === module) {
 
 module.exports = {
   main,
-  processIncomingListings,
-  flushNotificationBatch,
-  runFastTierCycle,
-  runNormalTierCycle
+  runScanCycle
 };

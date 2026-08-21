@@ -1,20 +1,16 @@
 // =====================================================================
-// Source Fetcher: Greenhouse ATS API
+// Source Fetcher: Greenhouse ATS API (100% Verified Active Boards)
 // =====================================================================
 
 const { normalizeJob } = require("../pipeline/normalizer");
 
 const GREENHOUSE_COMPANIES = [
   { company: "Razorpay", board: "razorpaysoftwareprivatelimited" },
-  { company: "Uber", board: "uber" },
   { company: "Stripe", board: "stripe" },
   { company: "Postman", board: "postman" },
   { company: "PhonePe", board: "phonepe" },
   { company: "Slice", board: "slice" },
-  { company: "Cars24", board: "cars24" },
-  { company: "Groww", board: "groww" },
-  { company: "CRED", board: "cred" },
-  { company: "Deliveroo", board: "deliveroo" }
+  { company: "Groww", board: "groww" }
 ];
 
 async function fetchGreenhouseJobsForBoard(company, board) {
@@ -38,6 +34,8 @@ async function fetchGreenhouseJobsForBoard(company, board) {
         return isIndia && isTech;
       })
       .map((j) => {
+        // Construct canonical direct apply link
+        const directUrl = j.absolute_url || `https://job-boards.greenhouse.io/${board}/jobs/${j.id}`;
         return normalizeJob({
           jobId: `gh_${board}_${j.id}`,
           source: "Greenhouse",
@@ -53,8 +51,8 @@ async function fetchGreenhouseJobsForBoard(company, board) {
           maximumExperience: null,
           education: "B.Tech / B.E. in CSE / IT",
           publishedAt: j.updated_at || new Date().toISOString(),
-          applicationUrl: j.absolute_url,
-          companyCareersUrl: `https://boards.greenhouse.io/${board}`,
+          applicationUrl: directUrl,
+          companyCareersUrl: `https://job-boards.greenhouse.io/${board}`,
           salary: "Not Disclosed",
           jobReferenceId: String(j.id)
         }, "Greenhouse");
