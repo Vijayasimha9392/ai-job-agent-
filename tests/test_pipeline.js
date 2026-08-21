@@ -240,7 +240,7 @@ async function runAllTests() {
   });
 
   await runTest("Multi-Channel Orchestrator executes parallel batch dispatch (Promise.allSettled)", async () => {
-    const result = await dispatchNotificationBatch(sampleBatch);
+    const result = await dispatchNotificationBatch(sampleBatch, { isTest: true });
     assert.strictEqual(typeof result.batchId, "string");
     assert.strictEqual(result.overallStatus === "SENT" || result.overallStatus === "PARTIAL", true);
   });

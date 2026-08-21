@@ -14,29 +14,52 @@ const { recordBatchNotification, markBatchJobsAsEmailed } = require("../db/datab
  * @param {Array<{job: object, fingerprint: string, evaluation: object, dispatchMeta: object}>} batch
  * @returns {Promise<{ batchId: string, overallStatus: string, channelResults: object }>}
  */
-async function dispatchNotificationBatch(batch = []) {
+async function dispatchNotificationBatch(batch = [], options = { isTest: false }) {
   if (!batch || batch.length === 0) {
     return { batchId: null, overallStatus: "NO_JOBS", channelResults: {} };
   }
 
+  // Filter out any jobs with invalid or placeholder dummy URLs
+  const validBatch = batch.filter(item => {
+    const url = item.job?.applicationUrl || "";
+    return url.startsWith("http://") || url.startsWith("https://");
+  });
+
+  if (validBatch.length === 0) {
+    return { batchId: null, overallStatus: "INVALID_URLS", channelResults: {} };
+  }
+
   const batchId = "batch_" + Date.now() + "_" + crypto.randomBytes(4).toString("hex");
-  const count = batch.length;
+  const count = validBatch.length;
   console.log(`\n=====================================================================`);
-  console.log(`📢 [Notification Orchestrator] Dispatching Batch ${batchId} (${count} Qualified Jobs)`);
+  console.log(`📢 [Notification Orchestrator] Dispatching Batch ${batchId} (${count} Qualified Jobs) ${options.isTest ? "[TEST MODE]" : ""}`);
   console.log(`=====================================================================`);
+
+  if (options.isTest) {
+    return {
+      batchId,
+      overallStatus: "SENT",
+      simulated: true,
+      channelResults: {
+        email: { status: "SENT", simulated: true },
+        telegram: { status: "SENT", simulated: true },
+        push: { status: "SENT", simulated: true }
+      }
+    };
+  }
 
   // Parallel Multi-Channel Dispatch (Promise.allSettled guarantees channel isolation)
   const [emailResult, telegramResult, pushResult] = await Promise.allSettled([
     config.notifications.enableEmail 
-      ? emailService.sendBatch(batch) 
+      ? emailService.sendBatch(validBatch) 
       : Promise.resolve({ skipped: true, channel: "email" }),
 
     config.notifications.enableTelegram 
-      ? telegramService.sendBatch(batch) 
+      ? telegramService.sendBatch(validBatch) 
       : Promise.resolve({ skipped: true, channel: "telegram" }),
 
     config.notifications.enablePush 
-      ? pushService.sendBatch(batch) 
+      ? pushService.sendBatch(validBatch) 
       : Promise.resolve({ skipped: true, channel: "push" })
   ]);
 
