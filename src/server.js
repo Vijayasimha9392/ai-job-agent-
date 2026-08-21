@@ -1,9 +1,6 @@
-// =====================================================================
-// HTTP Web & REST API Server (Express)
-// =====================================================================
-
 const express = require("express");
 const path = require("path");
+const fs = require("fs");
 const config = require("./config/env");
 const apiRoutes = require("./api/routes");
 
