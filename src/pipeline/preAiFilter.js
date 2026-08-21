@@ -145,23 +145,59 @@ function applyPreAiFilter(job) {
     }
   }
 
-  // 5. Check Non-India Locations
-  const hasIndiaKeyword = location.includes("india") || location.includes("bangalore") || 
-                          location.includes("bengaluru") || location.includes("hyderabad") || 
-                          location.includes("pune") || location.includes("chennai") || 
-                          location.includes("mumbai") || location.includes("delhi") || 
-                          location.includes("noida") || location.includes("gurgaon") || 
-                          location.includes("gurugram");
+const INDIAN_LOCATIONS = [
+  "india", "bengaluru", "bangalore", "hyderabad", "pune", "chennai", "mumbai",
+  "delhi", "ncr", "noida", "gurgaon", "gurugram", "kolkata", "ahmedabad",
+  "kochi", "coimbatore", "chandigarh", "jaipur", "indore", "trivandrum",
+  "thiruvananthapuram", "mysore", "mysuru", "mohali", "bhubaneswar",
+  "secunderabad", "karnataka", "telangana", "maharashtra", "tamil nadu",
+  "kerala", "haryana", "uttar pradesh"
+];
 
-  if (!hasIndiaKeyword) {
-    for (const nonInd of NON_INDIA_LOCATIONS) {
-      if (location.includes(nonInd) || title.includes(nonInd)) {
-        return {
-          isPass: false,
-          reason: `Job is explicitly localized to foreign region: "${job.location}"`,
-          filterCategory: "LOCATION_INELIGIBLE"
-        };
-      }
+const FOREIGN_LOCATIONS = [
+  "united states", "usa", "us", "united kingdom", "uk", "london", "germany",
+  "deutschland", "berlin", "munich", "frankfurt", "france", "paris", "canada",
+  "toronto", "vancouver", "australia", "sydney", "melbourne", "singapore",
+  "netherlands", "amsterdam", "poland", "warsaw", "krakow", "sweden",
+  "stockholm", "switzerland", "zurich", "dubai", "uae", "brazil", "mexico",
+  "philippines", "japan", "tokyo", "ireland", "dublin", "austin", "san francisco",
+  "seattle", "new york", "california", "texas", "chicago", "boston", "los angeles",
+  "emea", "latam", "apac", "romania", "hungary", "spain", "madrid", "italy", "rome"
+];
+
+  // 6. Strict India Location Verification (Candidate is based in Hyderabad / India)
+  const locLower = (job.location || "").toLowerCase();
+  const titleLower = (job.title || "").toLowerCase();
+  const descLower = (job.description || "").toLowerCase();
+
+  const isIndiaExplicit = INDIAN_LOCATIONS.some(ind => {
+    const reg = new RegExp(`\\b${ind}\\b`, "i");
+    return reg.test(locLower) || reg.test(titleLower);
+  });
+
+  const hasForeignExplicit = FOREIGN_LOCATIONS.some(foreign => {
+    const reg = new RegExp(`\\b${foreign}\\b`, "i");
+    return reg.test(locLower);
+  });
+
+  // If explicitly in a foreign location and NOT in India -> REJECT
+  if (hasForeignExplicit && !isIndiaExplicit) {
+    return {
+      isPass: false,
+      reason: `Job location "${job.location}" is outside India (matches foreign region)`,
+      filterCategory: "LOCATION_INELIGIBLE"
+    };
+  }
+
+  // If location is NOT confirmed in India -> REJECT
+  if (!isIndiaExplicit) {
+    const descHasIndia = INDIAN_LOCATIONS.some(ind => new RegExp(`\\b${ind}\\b`, "i").test(descLower.slice(0, 400)));
+    if (!descHasIndia) {
+      return {
+        isPass: false,
+        reason: `Job location "${job.location}" is not verified within India or Indian tech hubs`,
+        filterCategory: "LOCATION_INELIGIBLE"
+      };
     }
   }
 

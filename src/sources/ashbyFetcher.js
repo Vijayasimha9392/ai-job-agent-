@@ -25,11 +25,12 @@ async function fetchAshbyJobsForBoard(company, board) {
       .filter((j) => {
         const loc = (j.location || j.secondaryLocations?.map(l => l.location).join(" ") || "").toLowerCase();
         const isIndia = loc.includes("india") || loc.includes("bangalore") || loc.includes("bengaluru") || 
-                        loc.includes("hyderabad") || loc.includes("remote");
+                        loc.includes("hyderabad") || loc.includes("pune") || loc.includes("chennai") ||
+                        loc.includes("mumbai") || loc.includes("delhi") || loc.includes("noida") || loc.includes("gurgaon");
         const title = (j.title || "").toLowerCase();
         const isTech = title.includes("software") || title.includes("engineer") || title.includes("developer") || 
-                       title.includes("backend") || title.includes("full stack");
-        return (isIndia || loc.includes("remote")) && isTech;
+                       title.includes("backend") || title.includes("full stack") || title.includes("java");
+        return isIndia && isTech;
       })
       .map((j) => {
         return normalizeJob({

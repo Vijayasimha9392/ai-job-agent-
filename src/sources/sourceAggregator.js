@@ -57,13 +57,11 @@ async function fetchFastTierSources(queryVariations = ["Java Developer India", "
  * - Arbeitnow & Remotive feeds
  */
 async function fetchNormalTierSources() {
-  console.log("🌐 [Aggregator] Ingesting NORMAL Tier sources (5m cadence)...");
+  console.log("🌐 [Aggregator] Ingesting NORMAL Tier sources (India career feeds)...");
   const startTime = Date.now();
 
   const promises = [
-    fetchAllWorkdayJobs().then(jobs => { updateSourceState("Workday", "NORMAL", jobs.length); return jobs; }),
-    fetchArbeitnowJobs().then(jobs => { updateSourceState("Arbeitnow", "NORMAL", jobs.length); return jobs; }),
-    fetchRemotiveJobs().then(jobs => { updateSourceState("Remotive", "NORMAL", jobs.length); return jobs; })
+    fetchAllWorkdayJobs().then(jobs => { updateSourceState("Workday", "NORMAL", jobs.length); return jobs; })
   ];
 
   const results = await Promise.allSettled(promises);
