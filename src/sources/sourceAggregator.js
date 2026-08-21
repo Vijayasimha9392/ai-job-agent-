@@ -1,87 +1,101 @@
 // =====================================================================
-// Multi-Source Job Aggregator - Fault-tolerant concurrent ingestor
+// Source Aggregator - Multi-Tier Concurrent Ingestion Engine
 // =====================================================================
 
-const candidateProfile = require("../config/candidateProfile");
+const { fetchAllGreenhouseJobs } = require("./greenhouseFetcher");
+const { fetchAllLeverJobs } = require("./leverFetcher");
+const { fetchAllAshbyJobs } = require("./ashbyFetcher");
+const { fetchAllSmartRecruitersJobs } = require("./smartRecruitersFetcher");
+const { fetchAllWorkdayJobs } = require("./workdayFetcher");
+const { fetchAdzunaJobs } = require("./adzunaFetcher");
 const { fetchJSearchJobs } = require("./jsearchFetcher");
 const { fetchArbeitnowJobs } = require("./arbeitnowFetcher");
 const { fetchRemotiveJobs } = require("./remotiveFetcher");
-const { fetchAdzunaJobs } = require("./adzunaFetcher");
-const { fetchDirectAtsJobs } = require("./atsFeedsFetcher");
+const { updateSourceState } = require("../db/database");
 
 /**
- * Executes concurrent queries across all supported sources
- * @param {Array<string>} [queries]
- * @returns {Promise<Array>} List of raw job objects
+ * Executes Fast Tier Sources (Poll interval: 2 minutes)
+ * - JSearch API
+ * - Adzuna API
+ * - Greenhouse career pages
+ * - Lever career pages
+ * - SmartRecruiters career pages
+ * - Ashby career pages
  */
-async function aggregateJobsFromAllSources(queries = candidateProfile.searchQueries.slice(0, 4)) {
-  console.log(`🌐 [Aggregator] Initiating multi-source ingestion across ${queries.length} query variations...`);
+async function fetchFastTierSources(queryVariations = ["Java Developer India", "Spring Boot React Developer"]) {
+  console.log("⚡ [Aggregator] Ingesting FAST Tier sources (2m cadence)...");
+  const startTime = Date.now();
 
-  const tasks = [];
-
-  // 1. JSearch queries
-  for (const q of queries) {
-    tasks.push(
-      fetchJSearchJobs(q, "today").catch((err) => {
-        console.warn(`[Aggregator] JSearch "${q}" warning:`, err.message);
-        return [];
-      })
-    );
-  }
-
-  // 2. Adzuna queries (India tech ecosystem)
-  const adzunaQueries = [
-    "Java Developer",
-    "Associate Software Engineer",
-    "Java Spring Boot",
-    "Java Backend",
-    "Full Stack Developer Java",
-    "Software Engineer Fresher"
+  const promises = [
+    fetchAllGreenhouseJobs().then(jobs => { updateSourceState("Greenhouse", "FAST", jobs.length); return jobs; }),
+    fetchAllLeverJobs().then(jobs => { updateSourceState("Lever", "FAST", jobs.length); return jobs; }),
+    fetchAllAshbyJobs().then(jobs => { updateSourceState("Ashby", "FAST", jobs.length); return jobs; }),
+    fetchAllSmartRecruitersJobs().then(jobs => { updateSourceState("SmartRecruiters", "FAST", jobs.length); return jobs; }),
+    ...queryVariations.slice(0, 3).map(q => fetchAdzunaJobs(q).then(jobs => { updateSourceState("Adzuna", "FAST", jobs.length); return jobs; })),
+    ...queryVariations.slice(0, 2).map(q => fetchJSearchJobs(q).then(jobs => { updateSourceState("JSearch", "FAST", jobs.length); return jobs; }))
   ];
-  for (const aq of adzunaQueries) {
-    tasks.push(
-      fetchAdzunaJobs(aq).catch((err) => {
-        console.warn(`[Aggregator] Adzuna "${aq}" warning:`, err.message);
-        return [];
-      })
-    );
-  }
 
-  // 3. Arbeitnow
-  tasks.push(
-    fetchArbeitnowJobs().catch((err) => {
-      console.warn("[Aggregator] Arbeitnow warning:", err.message);
-      return [];
-    })
-  );
+  const results = await Promise.allSettled(promises);
+  const jobs = [];
 
-  // 4. Remotive
-  tasks.push(
-    fetchRemotiveJobs().catch((err) => {
-      console.warn("[Aggregator] Remotive warning:", err.message);
-      return [];
-    })
-  );
-
-  // 5. Direct ATS Feeds
-  tasks.push(
-    fetchDirectAtsJobs().catch((err) => {
-      console.warn("[Aggregator] Direct ATS warning:", err.message);
-      return [];
-    })
-  );
-
-  const results = await Promise.allSettled(tasks);
-  const aggregated = [];
-
-  for (const res of results) {
-    if (res.status === "fulfilled" && Array.isArray(res.value)) {
-      aggregated.push(...res.value);
+  for (const r of results) {
+    if (r.status === "fulfilled" && Array.isArray(r.value)) {
+      jobs.push(...r.value);
+    } else if (r.status === "rejected") {
+      console.warn("⚠️ [Fast Tier] Source task error:", r.reason?.message || r.reason);
     }
   }
 
-  console.log(`✅ [Aggregator] Ingested ${aggregated.length} raw listings across all sources.`);
-  return aggregated;
+  console.log(`✅ [Fast Tier] Ingested ${jobs.length} raw jobs in ${Date.now() - startTime}ms`);
+  return jobs;
 }
 
-module.exports = { aggregateJobsFromAllSources };
+/**
+ * Executes Normal Tier Sources (Poll interval: 5 minutes)
+ * - Workday public career pages
+ * - SuccessFactors public career pages
+ * - Arbeitnow & Remotive feeds
+ */
+async function fetchNormalTierSources() {
+  console.log("🌐 [Aggregator] Ingesting NORMAL Tier sources (5m cadence)...");
+  const startTime = Date.now();
+
+  const promises = [
+    fetchAllWorkdayJobs().then(jobs => { updateSourceState("Workday", "NORMAL", jobs.length); return jobs; }),
+    fetchArbeitnowJobs().then(jobs => { updateSourceState("Arbeitnow", "NORMAL", jobs.length); return jobs; }),
+    fetchRemotiveJobs().then(jobs => { updateSourceState("Remotive", "NORMAL", jobs.length); return jobs; })
+  ];
+
+  const results = await Promise.allSettled(promises);
+  const jobs = [];
+
+  for (const r of results) {
+    if (r.status === "fulfilled" && Array.isArray(r.value)) {
+      jobs.push(...r.value);
+    } else if (r.status === "rejected") {
+      console.warn("⚠️ [Normal Tier] Source task error:", r.reason?.message || r.reason);
+    }
+  }
+
+  console.log(`✅ [Normal Tier] Ingested ${jobs.length} raw jobs in ${Date.now() - startTime}ms`);
+  return jobs;
+}
+
+/**
+ * Executes All Sources Concurrently
+ */
+async function fetchAllSources(queryVariations = []) {
+  console.log("🌐 [Aggregator] Initiating full multi-source ingestion...");
+  const [fastJobs, normalJobs] = await Promise.all([
+    fetchFastTierSources(queryVariations),
+    fetchNormalTierSources()
+  ]);
+
+  return [...fastJobs, ...normalJobs];
+}
+
+module.exports = {
+  fetchFastTierSources,
+  fetchNormalTierSources,
+  fetchAllSources
+};

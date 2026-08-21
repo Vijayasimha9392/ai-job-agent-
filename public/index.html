@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🔥 Job Hunter AI — Near Real-Time Multi-Channel Intelligence</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #090d16;
+      --card-bg: #111827;
+      --card-border: #1f293d;
+      --primary: #3b82f6;
+      --primary-hover: #2563eb;
+      --accent-green: #10b981;
+      --accent-red: #ef4444;
+      --text: #f3f4f6;
+      --text-muted: #9ca3af;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      padding: 2rem 1rem;
+    }
+    .container { max-width: 1000px; margin: 0 auto; }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 2rem;
+      border-bottom: 1px solid var(--card-border);
+      margin-bottom: 2rem;
+    }
+    .logo-area h1 { font-size: 1.75rem; font-weight: 800; display: flex; align-items: center; gap: 0.5rem; }
+    .logo-area p { color: var(--text-muted); font-size: 0.9rem; margin-top: 0.25rem; }
+    .btn {
+      background-color: var(--primary);
+      color: #fff;
+      border: none;
+      padding: 0.65rem 1.25rem;
+      border-radius: 8px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      transition: background-color 0.2s;
+    }
+    .btn:hover { background-color: var(--primary-hover); }
+    .btn-outline { background: transparent; border: 1px solid var(--card-border); color: var(--text); }
+    .btn-outline:hover { background: #1f293d; }
+    .grid-stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 1rem;
+      margin-bottom: 2rem;
+    }
+    .stat-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 1.25rem;
+    }
+    .stat-card .label { color: var(--text-muted); font-size: 0.85rem; font-weight: 500; }
+    .stat-card .val { font-size: 1.5rem; font-weight: 700; margin-top: 0.35rem; color: #fff; }
+    .stat-card .badge {
+      display: inline-block;
+      font-size: 0.75rem;
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+      margin-top: 0.5rem;
+    }
+    .badge-green { background: rgba(16, 185, 129, 0.2); color: #34d399; }
+    .badge-blue { background: rgba(59, 130, 246, 0.2); color: #60a5fa; }
+    .channel-bar {
+      display: flex;
+      gap: 1rem;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      padding: 1rem;
+      border-radius: 12px;
+      margin-bottom: 2rem;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .channel-item { display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+    .dot-active { background: var(--accent-green); box-shadow: 0 0 8px rgba(16, 185, 129, 0.6); }
+    .job-list h2 { font-size: 1.25rem; margin-bottom: 1rem; font-weight: 700; }
+    .job-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 1.25rem;
+      margin-bottom: 1rem;
+      transition: transform 0.15s, border-color 0.15s;
+    }
+    .job-card:hover { border-color: var(--primary); transform: translateY(-2px); }
+    .job-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.5rem; }
+    .job-title { font-size: 1.1rem; font-weight: 700; color: #fff; }
+    .job-score {
+      background: #1e3a8a;
+      color: #93c5fd;
+      font-weight: 700;
+      padding: 0.25rem 0.65rem;
+      border-radius: 6px;
+      font-size: 0.85rem;
+    }
+    .job-company { color: #94a3b8; font-size: 0.95rem; margin-bottom: 0.75rem; }
+    .job-tags { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1rem; }
+    .tag { background: #1e293b; color: #cbd5e1; font-size: 0.75rem; padding: 0.25rem 0.5rem; border-radius: 4px; }
+    .job-footer { display: flex; justify-content: space-between; align-items: center; font-size: 0.85rem; color: var(--text-muted); }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="logo-area">
+        <h1>🔥 Job Hunter AI</h1>
+        <p>Near Real-Time Multi-Channel Discovery for <b>Vijayasimha Tammineni</b></p>
+      </div>
+      <div>
+        <button id="btnPush" class="btn" onclick="requestPushPermission()">🔔 Enable Web Push Alerts</button>
+      </div>
+    </div>
+
+    <div class="grid-stats">
+      <div class="stat-card">
+        <div class="label">Fast Tier Polling</div>
+        <div class="val">2 Minutes</div>
+        <span class="badge badge-green">⚡ Active</span>
+      </div>
+      <div class="stat-card">
+        <div class="label">Aggregation Window</div>
+        <div class="val">2 Minutes</div>
+        <span class="badge badge-blue">📦 Consolidated</span>
+      </div>
+      <div class="stat-card">
+        <div class="label">Freshness Max Cutoff</div>
+        <div class="val">40 Hours</div>
+        <span class="badge badge-green">🛡️ Strict Freshness</span>
+      </div>
+      <div class="stat-card">
+        <div class="label">Match Threshold</div>
+        <div class="val">≥ 65% (≥60% Fresh)</div>
+        <span class="badge badge-blue">🎯 Java Full Stack</span>
+      </div>
+    </div>
+
+    <div class="channel-bar">
+      <div class="channel-item"><span class="dot dot-active"></span> <b>Email:</b> Gmail SMTP</div>
+      <div class="channel-item"><span class="dot dot-active"></span> <b>Telegram:</b> Bot API</div>
+      <div class="channel-item"><span class="dot dot-active"></span> <b>Push:</b> Firebase FCM</div>
+      <div style="margin-left: auto; font-size: 0.85rem; color: var(--text-muted);">
+        Status: <span id="healthStatus" style="color:#10b981; font-weight:600;">HEALTHY (Live)</span>
+      </div>
+    </div>
+
+    <div class="job-list">
+      <h2>🚀 Recently Discovered &amp; Notified Jobs</h2>
+      <div id="jobsContainer">
+        <div style="color: var(--text-muted); padding: 2rem; text-align: center;">Loading live job feed...</div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

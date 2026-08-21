@@ -1,4 +1,4 @@
-﻿// =====================================================================
+// =====================================================================
 // Job Data Normalizer - Converts disparate raw sources into canonical schema
 // =====================================================================
 
@@ -125,6 +125,7 @@ function normalizeJob(rawJob, sourceName = "Custom") {
   return {
     jobId,
     source: sourceName,
+    sourceType: rawJob.sourceType || (sourceName.includes("Greenhouse") || sourceName.includes("Lever") || sourceName.includes("Ashby") || sourceName.includes("Workday") || sourceName.includes("SmartRecruiters") ? "Official ATS" : (sourceName.includes("Adzuna") || sourceName.includes("JSearch") ? "Major Job API" : "Career Feed")),
     company,
     title,
     location,
@@ -137,7 +138,8 @@ function normalizeJob(rawJob, sourceName = "Custom") {
     education: rawJob.education || "B.Tech / B.E. / MCA / Any Graduate",
     publishedAt,
     discoveredAt,
-    jobAgeHours: null, // Will be computed by FreshnessEngine
+    jobAgeMinutes: null, // Will be computed programmatically by FreshnessEngine
+    jobAgeHours: null,   // Will be computed programmatically by FreshnessEngine
     freshnessVerified,
     applicationUrl,
     companyCareersUrl,
