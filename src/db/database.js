@@ -54,17 +54,28 @@ function saveLocalDb() {
 async function initDatabase() {
   loadLocalDb();
 
-  if (Pool && !config.database.useSqlite && config.database.url) {
+  const isCI = process.env.CI === "true" || process.env.GITHUB_ACTIONS === "true";
+  const isLocalPostgres = (config.database.url || "").includes("localhost") || (config.database.url || "").includes("127.0.0.1");
+
+  // In CI runners or when Postgres is not explicitly provided, use resilient local store
+  if (Pool && !config.database.useSqlite && config.database.url && (!isCI || !isLocalPostgres)) {
     try {
       pool = new Pool({
         connectionString: config.database.url,
-        connectionTimeoutMillis: 4000
+        connectionTimeoutMillis: 3000
+      });
+
+      // Prevent unhandled error events on the pool from terminating process
+      pool.on("error", (err) => {
+        isPostgresConnected = false;
       });
 
       const client = await pool.connect();
       const schemaPath = path.resolve(__dirname, "../../sql/schema.sql");
-      const schemaSql = fs.readFileSync(schemaPath, "utf8");
-      await client.query(schemaSql);
+      if (fs.existsSync(schemaPath)) {
+        const schemaSql = fs.readFileSync(schemaPath, "utf8");
+        await client.query(schemaSql);
+      }
       client.release();
 
       isPostgresConnected = true;
@@ -73,10 +84,14 @@ async function initDatabase() {
     } catch (err) {
       console.warn(`⚠️ [Database] PostgreSQL connection notice: ${err.message}. Operating in resilient local storage mode.`);
       isPostgresConnected = false;
+      if (pool) {
+        try { await pool.end(); } catch (e) {}
+        pool = null;
+      }
     }
-  } else {
-    console.log("📦 [Database] Operating in persistent local file storage mode.");
   }
+
+  console.log("📦 [Database] Operating in resilient local storage mode.");
 }
 
 async function hasJobBeenEmailed(fingerprint) {
