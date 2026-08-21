@@ -4,7 +4,7 @@
 
 const config = require("./config/env");
 const candidateProfile = require("./config/candidateProfile");
-const { initDatabase, isDuplicateFingerprint, saveJobAndFingerprint, saveJobEvaluation, getPipelineState, updatePipelineState } = require("./db/database");
+const { initDatabase, isDuplicateFingerprint, hasJobBeenEmailed, saveJobAndFingerprint, saveJobEvaluation, getPipelineState, updatePipelineState } = require("./db/database");
 const { aggregateJobsFromAllSources } = require("./sources/sourceAggregator");
 const { normalizeJob } = require("./pipeline/normalizer");
 const { evaluateJobFreshness } = require("./pipeline/freshnessEngine");
@@ -12,8 +12,8 @@ const { generateJobFingerprint } = require("./pipeline/fingerprintEngine");
 const { applyPreAiFilter } = require("./pipeline/preAiFilter");
 const { classifyJobWithGemini } = require("./pipeline/geminiClassifier");
 const { determineDispatchPriority, calculateOpportunityScore } = require("./pipeline/scoringEngine");
-const { renderJobAlertEmail } = require("./notifications/emailRenderer");
-const { sendJobAlertEmail } = require("./notifications/emailSender");
+const { renderSummaryEmail } = require("./notifications/emailRenderer");
+const { sendSummaryAlertEmail } = require("./notifications/emailSender");
 
 let cron = null;
 try {
@@ -37,7 +37,7 @@ async function runScanCycle() {
   let newJobsCount = 0;
   let freshJobsCount = 0;
   let preFilteredPassCount = 0;
-  let matchedAlertsCount = 0;
+  const qualifiedJobs = [];
 
   try {
     const state = await getPipelineState();
@@ -52,7 +52,7 @@ async function runScanCycle() {
       // Step A: Normalize
       const normalized = normalizeJob(raw, raw.source || "Job Feed");
 
-      // Step B: Freshness Filter (< 40 Hours)
+      // Step B: Freshness Filter (< 24 Hours & Non-expired)
       const freshness = evaluateJobFreshness(normalized, cycleStartTime);
       if (!freshness.isFresh) {
         continue;
@@ -60,15 +60,16 @@ async function runScanCycle() {
       const freshJob = freshness.job;
       freshJobsCount++;
 
-      // Step C: Fingerprint Generation & Duplicate Check
+      // Step C: Fingerprint Generation & Duplicate Emailed Exclusion
       const fingerprint = generateJobFingerprint(freshJob);
-      const isDuplicate = await isDuplicateFingerprint(fingerprint);
+      const isAlreadyEmailed = await hasJobBeenEmailed(fingerprint);
 
-      if (isDuplicate) {
+      if (isAlreadyEmailed) {
+        // Exclude previously emailed jobs completely
         continue;
       }
 
-      // Step D: Pre-AI Rule-Based Filter (Zero-cost screening)
+      // Step D: Pre-AI Rule-Based Filter (Zero-cost screening: 0-2 yrs, non-senior, tech title)
       const preFilter = applyPreAiFilter(freshJob);
       if (!preFilter.isPass) {
         await saveJobAndFingerprint(freshJob, fingerprint, "REJECTED_RULE_FILTER");
@@ -76,7 +77,7 @@ async function runScanCycle() {
       }
       preFilteredPassCount++;
 
-      // Step E: Save to DB as NEW before AI call
+      // Step E: Save to DB as EVALUATING
       await saveJobAndFingerprint(freshJob, fingerprint, "EVALUATING");
 
       // Step F: Gemini AI Evaluation
@@ -90,25 +91,33 @@ async function runScanCycle() {
 
       console.log(`📈 [Result] Score: ${evaluation.matchScore}/100 | OppScore: ${oppScoreMeta.opportunityScore} | Priority: ${dispatchMeta.priorityLevel}`);
 
-      // Step H: Send Email if eligible & score passes threshold
+      // Step H: Collect for single summary email if eligible & score >= 80
       if (dispatchMeta.shouldEmail) {
-        matchedAlertsCount++;
-        const emailPayload = renderJobAlertEmail(freshJob, evaluation, dispatchMeta, config.timezone);
-        await sendJobAlertEmail(freshJob, fingerprint, evaluation, dispatchMeta, emailPayload);
+        qualifiedJobs.push({
+          job: freshJob,
+          fingerprint,
+          evaluation,
+          dispatchMeta
+        });
       } else {
         await saveJobAndFingerprint(freshJob, fingerprint, "STORED_NOT_EMAILED");
       }
     }
 
+    // Step I: Send EXACTLY ONE summary email per completed run (Combining all or sending "No New Jobs")
+    console.log(`\n📬 [Email Dispatcher] Preparing 55-minute cycle summary (Qualified Jobs: ${qualifiedJobs.length})...`);
+    const emailPayload = renderSummaryEmail(qualifiedJobs, config.timezone, candidateProfile.name || config.candidateName);
+    const sendResult = await sendSummaryAlertEmail(qualifiedJobs, emailPayload);
+
     // Update state
     await updatePipelineState({
       last_successful_run: cycleStartTime.toISOString(),
       total_scans: (state.total_scans || 0) + 1,
-      total_matches: (state.total_matches || 0) + matchedAlertsCount,
-      total_emails: (state.total_emails || 0) + matchedAlertsCount
+      total_matches: (state.total_matches || 0) + qualifiedJobs.length,
+      total_emails: (state.total_emails || 0) + (sendResult.success ? 1 : 0)
     });
 
-    console.log(`\n🎉 [Cycle Complete] Scanned: ${newJobsCount} | Fresh (<40h): ${freshJobsCount} | Pre-passed: ${preFilteredPassCount} | Alerts Sent: ${matchedAlertsCount}`);
+    console.log(`\n🎉 [Cycle Complete] Scanned: ${newJobsCount} | Fresh (<24h): ${freshJobsCount} | Pre-passed: ${preFilteredPassCount} | High Matches (≥80%): ${qualifiedJobs.length} | Summary Email Sent: ${sendResult.success ? "YES" : "NO"}`);
   } catch (err) {
     console.error(`💥 [Scanner] Critical error in scan cycle: ${err.message}`, err.stack);
   } finally {

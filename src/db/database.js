@@ -1,4 +1,4 @@
-﻿// =====================================================================
+// =====================================================================
 // Database Layer - PostgreSQL client with robust fallback (Zero Dependency Ready)
 // =====================================================================
 
@@ -71,6 +71,21 @@ async function initDatabase() {
   } else {
     console.log("📦 [Database] Operating in persistent local file storage mode.");
   }
+}
+
+async function hasJobBeenEmailed(fingerprint) {
+  if (isPostgresConnected && pool) {
+    try {
+      const res = await pool.query(
+        "SELECT job_fingerprint FROM job_fingerprints WHERE job_fingerprint = $1 AND status = 'EMAILED'",
+        [fingerprint]
+      );
+      return res.rows.length > 0;
+    } catch (err) {
+      console.error("[Database] Emailed check query error:", err.message);
+    }
+  }
+  return localDb.job_fingerprints[fingerprint]?.status === "EMAILED";
 }
 
 async function isDuplicateFingerprint(fingerprint) {
@@ -223,8 +238,10 @@ async function logEmailSent(jobId, fingerprint, recipientEmail, subject, matchSc
       );
 
       await pool.query(
-        `UPDATE job_fingerprints SET status = 'EMAILED', email_sent_at = CURRENT_TIMESTAMP, match_score = $1 WHERE job_fingerprint = $2`,
-        [matchScore, fingerprint]
+        `INSERT INTO job_fingerprints (job_fingerprint, job_id, status, email_sent_at, match_score)
+         VALUES ($1, $2, 'EMAILED', CURRENT_TIMESTAMP, $3)
+         ON CONFLICT (job_fingerprint) DO UPDATE SET status = 'EMAILED', email_sent_at = CURRENT_TIMESTAMP, match_score = $3`,
+        [fingerprint, jobId, matchScore]
       );
       return;
     } catch (err) {
@@ -248,8 +265,31 @@ async function logEmailSent(jobId, fingerprint, recipientEmail, subject, matchSc
     localDb.job_fingerprints[fingerprint].status = "EMAILED";
     localDb.job_fingerprints[fingerprint].email_sent_at = new Date().toISOString();
     localDb.job_fingerprints[fingerprint].match_score = matchScore;
+  } else {
+    localDb.job_fingerprints[fingerprint] = {
+      job_fingerprint: fingerprint,
+      job_id: jobId,
+      status: "EMAILED",
+      email_sent_at: new Date().toISOString(),
+      match_score: matchScore
+    };
   }
   saveLocalDb();
+}
+
+async function markBatchJobsAsEmailed(jobsWithMeta, recipientEmail, subject) {
+  for (const item of jobsWithMeta) {
+    const { job, fingerprint, evaluation, dispatchMeta } = item;
+    await logEmailSent(
+      job.jobId,
+      fingerprint,
+      recipientEmail,
+      subject,
+      evaluation.matchScore,
+      dispatchMeta.priorityLevel,
+      "SENT"
+    );
+  }
 }
 
 async function getPipelineState() {
@@ -291,9 +331,11 @@ async function updatePipelineState(newState) {
 module.exports = {
   initDatabase,
   isDuplicateFingerprint,
+  hasJobBeenEmailed,
   saveJobAndFingerprint,
   saveJobEvaluation,
   logEmailSent,
+  markBatchJobsAsEmailed,
   getPipelineState,
   updatePipelineState
 };

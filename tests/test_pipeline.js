@@ -23,10 +23,10 @@ async function runTests() {
   let passedTests = 0;
   let totalTests = 0;
 
-  function test(name, fn) {
+  async function test(name, fn) {
     totalTests++;
     try {
-      fn();
+      await fn();
       console.log(`  ✅ [PASS] ${name}`);
       passedTests++;
     } catch (err) {
@@ -35,11 +35,12 @@ async function runTests() {
   }
 
   // -------------------------------------------------------------------
+  // -------------------------------------------------------------------
   // TEST GROUP 1: Freshness Engine
   // -------------------------------------------------------------------
   console.log("--- 1. Testing Freshness Engine ---");
 
-  test("Should score 100 for jobs posted 30 minutes ago (< 1h)", () => {
+  await test("Should score 100 for jobs posted 30 minutes ago (< 1h)", () => {
     const pub = new Date(now.getTime() - 30 * 60 * 1000).toISOString();
     const age = calculateJobAgeHours(pub, now);
     const score = getFreshnessScore(age, true);
@@ -48,7 +49,7 @@ async function runTests() {
     assert.strictEqual(score.isAcceptable, true);
   });
 
-  test("Should score 95 for jobs posted 2 hours ago (1-3h)", () => {
+  await test("Should score 95 for jobs posted 2 hours ago (1-3h)", () => {
     const pub = new Date(now.getTime() - 2 * 60 * 60 * 1000).toISOString();
     const age = calculateJobAgeHours(pub, now);
     const score = getFreshnessScore(age, true);
@@ -56,7 +57,7 @@ async function runTests() {
     assert.strictEqual(score.tier, "PRIORITY_1_3H");
   });
 
-  test("Should score 90 for jobs posted 4 hours ago (3-6h)", () => {
+  await test("Should score 90 for jobs posted 4 hours ago (3-6h)", () => {
     const pub = new Date(now.getTime() - 4 * 60 * 60 * 1000).toISOString();
     const age = calculateJobAgeHours(pub, now);
     const score = getFreshnessScore(age, true);
@@ -64,7 +65,7 @@ async function runTests() {
     assert.strictEqual(score.tier, "PRIORITY_3_6H");
   });
 
-  test("Should score 75 for jobs posted 18 hours ago (12-24h)", () => {
+  await test("Should score 75 for jobs posted 18 hours ago (12-24h)", () => {
     const pub = new Date(now.getTime() - 18 * 60 * 60 * 1000).toISOString();
     const age = calculateJobAgeHours(pub, now);
     const score = getFreshnessScore(age, true);
@@ -72,7 +73,7 @@ async function runTests() {
     assert.strictEqual(score.tier, "PRIORITY_12_24H");
   });
 
-  test("Should REJECT jobs older than 40 hours (> 40h cutoff)", () => {
+  await test("Should REJECT jobs older than 40 hours (> 40h cutoff)", () => {
     const pub = new Date(now.getTime() - 42 * 60 * 60 * 1000).toISOString();
     const age = calculateJobAgeHours(pub, now);
     const score = getFreshnessScore(age, true);
@@ -86,7 +87,7 @@ async function runTests() {
   // -------------------------------------------------------------------
   console.log("\n--- 2. Testing Pre-AI Rule-Based Screening ---");
 
-  test("Should REJECT Senior / Lead / SDE 2 / Architect roles", () => {
+  await test("Should REJECT Senior / Lead / SDE 2 / Architect roles", () => {
     const seniorJob = {
       title: "Senior Java Developer & Tech Lead",
       description: "Leading a team of engineers",
@@ -106,7 +107,7 @@ async function runTests() {
     assert.strictEqual(filter2.filterCategory, "SENIORITY");
   });
 
-  test("Should REJECT jobs requiring mandatory 3+ years experience via description", () => {
+  await test("Should REJECT jobs requiring mandatory 3+ years experience via description", () => {
     const expJob = {
       title: "Java Backend Engineer",
       description: "Requires minimum 3+ years of experience with Spring Boot and AWS.",
@@ -126,7 +127,7 @@ async function runTests() {
     assert.strictEqual(filter2.filterCategory, "EXPERIENCE_EXCEEDED");
   });
 
-  test("Should REJECT expired or closed job listings", () => {
+  await test("Should REJECT expired or closed job listings", () => {
     const closedJob = {
       title: "Java Developer",
       description: "Note: This application closed and we are no longer accepting applications.",
@@ -137,7 +138,7 @@ async function runTests() {
     assert.strictEqual(filter.filterCategory, "EXPIRED_JOB");
   });
 
-  test("Should REJECT Non-development / BPO / Sales roles", () => {
+  await test("Should REJECT Non-development / BPO / Sales roles", () => {
     const bpoJob = {
       title: "Customer Support Executive - BPO Voice Process",
       description: "Handling calls",
@@ -148,7 +149,7 @@ async function runTests() {
     assert.strictEqual(filter.filterCategory, "NON_DEV_ROLE");
   });
 
-  test("Should PASS valid Associate Software Engineer / Java Fresher / 0-2 years role", () => {
+  await test("Should PASS valid Associate Software Engineer / Java Fresher / 0-2 years role", () => {
     const goodJob = {
       title: "Associate Software Engineer - Java / Spring Boot",
       minimumExperience: 0,
@@ -164,7 +165,7 @@ async function runTests() {
   // -------------------------------------------------------------------
   console.log("\n--- 3. Testing SHA-256 Fingerprinting Engine ---");
 
-  test("Should generate identical hashes for identical jobs regardless of casing/spacing", () => {
+  await test("Should generate identical hashes for identical jobs regardless of casing/spacing", () => {
     const jobA = {
       company: "Infosys Technologies Ltd.",
       title: "Associate Software Engineer - Java",
@@ -188,7 +189,7 @@ async function runTests() {
   // -------------------------------------------------------------------
   console.log("\n--- 4. Testing Scoring & Priority Routing ---");
 
-  test("Should route fresh (<3h) high match (>=80%) job to URGENT priority", () => {
+  await test("Should route fresh (<3h) high match (>=80%) job to URGENT priority", () => {
     const mockFreshJob = {
       jobAgeHours: 0.5,
       freshnessScore: 100,
@@ -205,7 +206,7 @@ async function runTests() {
     assert.strictEqual(dispatch.priorityLevel, "URGENT");
   });
 
-  test("Should REJECT email dispatch for scores below 80 (e.g., 61% or 75%)", () => {
+  await test("Should REJECT email dispatch for scores below 80 (e.g., 61% or 75%)", () => {
     const mockJob = {
       jobAgeHours: 0.5,
       freshnessScore: 100,
@@ -229,55 +230,100 @@ async function runTests() {
     assert.strictEqual(dispatch75.shouldEmail, false);
   });
 
-  test("Should calculate composite OpportunityScore correctly", () => {
+  await test("Should calculate composite OpportunityScore correctly", () => {
     const opp = calculateOpportunityScore(90, 100, "Company Career Portal");
     // (90 * 0.70) + (100 * 0.20) + (100 * 0.10) = 63 + 20 + 10 = 93
     assert.strictEqual(opp.opportunityScore, 93);
   });
 
   // -------------------------------------------------------------------
-  // TEST GROUP 5: HTML Email Template Generation
+  // TEST GROUP 5: Single Summary Email & No Jobs Found Rendering
   // -------------------------------------------------------------------
-  console.log("\n--- 5. Testing Email Alert Generator ---");
+  console.log("\n--- 5. Testing Single Summary Email & No Jobs Found Generator ---");
 
-  test("Should render rich HTML email containing all critical fields & CTA", () => {
-    const sampleJob = {
-      jobId: "job_test123",
-      company: "Razorpay",
-      title: "Junior Java Full Stack Developer",
-      location: "Bengaluru, India",
+  const { renderSummaryEmail } = require("../src/notifications/emailRenderer");
+  const { hasJobBeenEmailed, markBatchJobsAsEmailed, initDatabase } = require("../src/db/database");
+
+  await test("Should render combined summary email when multiple (N > 0) jobs found", () => {
+    const job1 = {
+      title: "Java Full Stack Developer",
+      company: "Company A",
+      location: "Hyderabad",
       workMode: "Hybrid",
-      publishedAt: new Date(now.getTime() - 45 * 60 * 1000).toISOString(),
-      discoveredAt: now.toISOString(),
-      jobAgeHours: 0.75,
-      freshnessLabel: "Urgent (< 1h ago)",
-      source: "Greenhouse",
-      salary: "₹8 - ₹12 LPA",
-      jobReferenceId: "RZP-4092",
-      applicationUrl: "https://boards.greenhouse.io/razorpay/jobs/4092",
-      companyCareersUrl: "https://razorpay.com/careers"
+      applicationUrl: "https://example.com/apply/1"
     };
-    const sampleEval = {
-      matchScore: 92,
+    const eval1 = {
+      matchScore: 87,
       matchLevel: "Excellent Match",
-      whyMatched: "Direct alignment with Java 17, Spring Boot, REST APIs, and React frontend.",
+      whyMatched: "Direct Java + React stack match",
       experienceRequired: "0-2 years",
-      matchedSkills: ["Java", "Spring Boot", "React.js", "MySQL"],
-      missingSkills: ["Kafka"],
-      applicationPriority: "Apply Immediately"
-    };
-    const sampleDispatch = {
-      priorityLevel: "URGENT",
-      badgeText: "🔥 URGENT ALERT (< 3h)",
-      badgeColor: "#dc2626"
+      matchedSkills: ["Java", "Spring Boot", "React.js"]
     };
 
-    const email = renderJobAlertEmail(sampleJob, sampleEval, sampleDispatch);
-    assert.ok(email.subject.includes("Razorpay"));
-    assert.ok(email.html.includes("Junior Java Full Stack Developer"));
-    assert.ok(email.html.includes("Apply Directly on Official Portal"));
-    assert.ok(email.html.includes("Razorpay"));
-    assert.ok(email.text.includes("Apply as early as possible"));
+    const job2 = {
+      title: "Java Developer",
+      company: "Company B",
+      location: "Bengaluru",
+      workMode: "On-site",
+      applicationUrl: "https://example.com/apply/2"
+    };
+    const eval2 = {
+      matchScore: 82,
+      matchLevel: "Strong Match",
+      whyMatched: "Strong Spring Boot & MySQL",
+      experienceRequired: "0-1 years",
+      matchedSkills: ["Java", "Spring Boot", "MySQL"]
+    };
+
+    const qualifiedJobs = [
+      { job: job1, evaluation: eval1, dispatchMeta: { priorityLevel: "EXCELLENT" } },
+      { job: job2, evaluation: eval2, dispatchMeta: { priorityLevel: "STRONG" } }
+    ];
+
+    const email = renderSummaryEmail(qualifiedJobs, "Asia/Kolkata", "Vijayasimha Tammineni");
+    assert.strictEqual(email.subject, "🚀 Job Hunter AI - 2 New Jobs Found");
+    assert.ok(email.text.includes("2 new matching jobs were found"));
+    assert.ok(email.text.includes("1. Java Full Stack Developer - Company A"));
+    assert.ok(email.text.includes("2. Java Developer - Company B"));
+    assert.ok(email.html.includes("Company A"));
+    assert.ok(email.html.includes("Company B"));
+    assert.ok(email.html.includes("https://example.com/apply/1"));
+    assert.ok(email.html.includes("https://example.com/apply/2"));
+  });
+
+  await test("Should render 'No New Jobs Found' email when zero (N = 0) matching jobs exist", () => {
+    const email = renderSummaryEmail([], "Asia/Kolkata", "Vijayasimha Tammineni");
+    assert.strictEqual(email.subject, "Job Hunter AI - No New Jobs Found");
+    assert.ok(email.text.includes("No new matching jobs were found in the latest 55-minute search."));
+    assert.ok(email.text.includes("Previously emailed jobs were excluded successfully."));
+    assert.ok(email.text.includes("The agent will check again in 55 minutes."));
+    assert.ok(email.html.includes("No New Matching Jobs Found"));
+  });
+
+  await test("Should exclude previously emailed jobs via persistent history", async () => {
+    await initDatabase();
+    const testFp = "test_fingerprint_unique_12345";
+    const testJob = {
+      jobId: "test_job_fp_1",
+      company: "Test Corp",
+      title: "Java Developer",
+      applicationUrl: "https://example.com/test-apply"
+    };
+
+    // Initially not emailed
+    const initialStatus = await hasJobBeenEmailed(testFp);
+    assert.strictEqual(initialStatus, false);
+
+    // Mark as emailed
+    await markBatchJobsAsEmailed(
+      [{ job: testJob, fingerprint: testFp, evaluation: { matchScore: 85 }, dispatchMeta: { priorityLevel: "STRONG" } }],
+      "test@example.com",
+      "🚀 Test Alert"
+    );
+
+    // Now hasJobBeenEmailed should be true
+    const updatedStatus = await hasJobBeenEmailed(testFp);
+    assert.strictEqual(updatedStatus, true);
   });
 
   console.log(`\n=====================================================================`);

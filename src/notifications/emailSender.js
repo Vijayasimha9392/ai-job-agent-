@@ -1,15 +1,15 @@
 // =====================================================================
-// Email Notification Sender - SMTP transport with retry & preview
+// Email Notification Sender - Single Summary SMTP Transport
 // =====================================================================
 
 const config = require("../config/env");
-const { logEmailSent } = require("../db/database");
+const { logEmailSent, markBatchJobsAsEmailed } = require("../db/database");
 
 let nodemailer = null;
 try {
   nodemailer = require("nodemailer");
 } catch (e) {
-  // Will operate in simulation/preview mode if nodemailer is not installed
+  // Operates in simulation mode if nodemailer missing
 }
 
 let transporter = null;
@@ -33,32 +33,28 @@ function getTransporter() {
 }
 
 /**
- * Sends job notification email
- * @param {object} job 
- * @param {string} fingerprint
- * @param {object} evaluation 
- * @param {object} dispatchMeta 
- * @param {object} emailPayload { subject, html, text }
+ * Sends a single combined summary email for the completed 55-minute cycle
+ * @param {Array<{job: object, fingerprint: string, evaluation: object, dispatchMeta: object}>} qualifiedJobsWithMeta
+ * @param {{ subject: string, html: string, text: string }} emailPayload
+ * @returns {Promise<{ success: boolean, messageId?: string, simulated?: boolean, error?: string }>}
  */
-async function sendJobAlertEmail(job, fingerprint, evaluation, dispatchMeta, emailPayload) {
+async function sendSummaryAlertEmail(qualifiedJobsWithMeta = [], emailPayload) {
   const recipient = config.candidateEmail;
+  const count = qualifiedJobsWithMeta.length;
 
   if (!recipient || recipient === "candidate_email@example.com" || !nodemailer) {
-    console.log(`\n📧 [EMAIL DISPATCH LOG] Alert for "${job.title}" at "${job.company}"`);
+    console.log(`\n📧 [EMAIL SIMULATION LOG] 55-Minute Cycle Summary`);
     console.log(`   Subject: ${emailPayload.subject}`);
-    console.log(`   Priority: ${dispatchMeta.priorityLevel} | Match: ${evaluation.matchScore}%`);
-    console.log(`   Direct Apply URL: ${job.applicationUrl}`);
-    
-    // Log as sent in local tracker
-    await logEmailSent(
-      job.jobId,
-      fingerprint,
-      recipient || "candidate@preview.local",
-      emailPayload.subject,
-      evaluation.matchScore,
-      dispatchMeta.priorityLevel,
-      "PREVIEW_LOGGED"
-    );
+    console.log(`   Total Jobs in Email: ${count}`);
+    console.log(`   Recipient: ${recipient || "candidate@preview.local"}`);
+
+    if (count > 0) {
+      await markBatchJobsAsEmailed(
+        qualifiedJobsWithMeta,
+        recipient || "candidate@preview.local",
+        emailPayload.subject
+      );
+    }
     return { success: true, simulated: true };
   }
 
@@ -69,8 +65,8 @@ async function sendJobAlertEmail(job, fingerprint, evaluation, dispatchMeta, ema
     text: emailPayload.text,
     html: emailPayload.html,
     headers: {
-      "X-Priority": dispatchMeta.priorityLevel === "URGENT" ? "1" : "3",
-      "X-Job-Agent-Score": String(evaluation.matchScore)
+      "X-Job-Hunter-Count": String(count),
+      "X-Job-Hunter-Cycle": "55min"
     }
   };
 
@@ -81,17 +77,13 @@ async function sendJobAlertEmail(job, fingerprint, evaluation, dispatchMeta, ema
     try {
       const client = getTransporter();
       const info = await client.sendMail(mailOptions);
-      console.log(`🚀 [Email Sent] Successfully dispatched alert to ${recipient}: ${info.messageId}`);
+      console.log(`🚀 [Email Sent] Successfully dispatched summary alert (${count} jobs) to ${recipient}: ${info.messageId}`);
 
-      await logEmailSent(
-        job.jobId,
-        fingerprint,
-        recipient,
-        emailPayload.subject,
-        evaluation.matchScore,
-        dispatchMeta.priorityLevel,
-        "SENT"
-      );
+      // ONLY mark jobs as EMAILED after the email is successfully dispatched
+      if (count > 0) {
+        await markBatchJobsAsEmailed(qualifiedJobsWithMeta, recipient, emailPayload.subject);
+        console.log(`✅ [Database] Marked ${count} jobs as EMAILED with timestamp.`);
+      }
 
       return { success: true, messageId: info.messageId };
     } catch (err) {
@@ -103,18 +95,21 @@ async function sendJobAlertEmail(job, fingerprint, evaluation, dispatchMeta, ema
     }
   }
 
-  await logEmailSent(
-    job.jobId,
-    fingerprint,
-    recipient,
-    emailPayload.subject,
-    evaluation.matchScore,
-    dispatchMeta.priorityLevel,
-    "FAILED",
-    lastError?.message
-  );
-
+  // Delivery failed - do NOT mark jobs as emailed so they can be retried in the next 55-minute cycle
+  console.error(`⚠️ [Email] Summary email failed. Jobs will NOT be marked as EMAILED so they can be retried.`);
   return { success: false, error: lastError?.message };
 }
 
-module.exports = { sendJobAlertEmail };
+// Backwards compatibility alias for single job tests
+async function sendJobAlertEmail(job, fingerprint, evaluation, dispatchMeta, emailPayload) {
+  return sendSummaryAlertEmail(
+    [{ job, fingerprint, evaluation, dispatchMeta }],
+    emailPayload
+  );
+}
+
+module.exports = {
+  sendSummaryAlertEmail,
+  sendJobAlertEmail
+};
+
