@@ -36,9 +36,9 @@ loadEnvFile();
 const config = {
   geminiApiKey: process.env.GEMINI_API_KEY || "",
   geminiModel: process.env.GEMINI_MODEL || "gemini-3.6-flash",
-  candidateName: process.env.CANDIDATE_NAME || "Candidate",
+  candidateName: process.env.CANDIDATE_NAME || "Vijayasimha Tammineni",
   candidateEmail: (process.env.CANDIDATE_EMAIL || "thornay7@gmail.com").trim(),
-  minMatchScoreToEmail: parseInt(process.env.MIN_MATCH_SCORE_TO_EMAIL || "75", 10),
+  minMatchScoreToEmail: parseInt(process.env.MIN_MATCH_SCORE_TO_EMAIL || "80", 10),
   maxJobAgeHours: parseFloat(process.env.MAX_JOB_AGE_HOURS || "24"),
   safetyBufferMinutes: parseInt(process.env.SAFETY_BUFFER_MINUTES || "15", 10),
   timezone: process.env.TIMEZONE || "Asia/Kolkata",

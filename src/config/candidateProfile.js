@@ -1,61 +1,86 @@
-﻿// =====================================================================
+// =====================================================================
 // Candidate Matching Profile & Search Rules Configuration
 // =====================================================================
 
 const candidateProfile = {
-  name: "Candidate",
-  title: "Early-Career Software Engineer / Java Full Stack Developer",
-  experienceMonths: 10, // ~8-12 months professional software development experience
-  experienceYearsRange: "0-2 years",
+  name: "Vijayasimha Tammineni",
+  title: "Java Full Stack Developer",
+  experienceMonths: 8,
+  experienceYearsRange: "0-2 years (Early Career / Fresher)",
   education: {
-    degree: "B.Tech in Computer Science and Engineering",
+    degree: "Bachelor of Technology in Computer Science and Engineering",
+    university: "Malla Reddy University, Hyderabad, India",
+    graduationPeriod: "September 2021 – May 2025",
     graduationYear: 2025,
     eligibleForFresherRoles: true
   },
+  workExperience: [
+    {
+      company: "Virinchi Ltd",
+      role: "Trainee Developer",
+      period: "September 2025 – May 2026",
+      project: "V23 – Healthcare Platform",
+      highlights: [
+        "Developed and maintained 15+ RESTful APIs using Java and Spring Boot (authentication, provider verification, approval workflows)",
+        "Designed backend modules and database schemas for healthcare workflows using MySQL and JDBC",
+        "Enhanced complex MySQL queries and JDBC operations with indexing, achieving 20% faster response times",
+        "Integrated React.js frontend components with Spring Boot REST APIs",
+        "Tested, debugged, and troubleshot REST APIs using Postman and collaborated in Agile sprint teams with Git"
+      ]
+    }
+  ],
+  projects: [
+    {
+      name: "Event Booking and Management System",
+      techStack: "Java, Spring Boot, MySQL, React.js, REST APIs",
+      highlights: [
+        "Engineered automated event scheduling, booking, and payment processing REST APIs",
+        "Normalized MySQL schemas, pagination, and filtering (reducing payload size by 40%)",
+        "Average API latency below 300ms"
+      ]
+    }
+  ],
   primarySkills: [
     "Java",
     "Core Java",
-    "Java 17",
     "Spring Boot",
     "Spring MVC",
     "REST APIs",
-    "JDBC",
     "JPA",
-    "Hibernate",
-    "Maven",
-    "MySQL",
-    "SQL",
+    "JDBC",
     "React.js",
     "JavaScript",
-    "HTML",
-    "CSS",
+    "HTML5",
+    "CSS3",
+    "MySQL",
+    "SQL",
+    "Maven",
+    "Postman",
     "Git",
     "GitHub",
-    "SDLC",
     "Agile",
     "Scrum",
+    "SDLC"
+  ],
+  secondarySkills: [
+    "Microservices",
+    "Hibernate",
+    "VS Code",
+    "Eclipse",
     "Debugging",
+    "Database Indexing",
     "Backend Development",
     "Full Stack Development"
   ],
-  secondarySkills: [
-    "Node.js",
-    "Express.js",
-    "MongoDB",
-    "PostgreSQL",
-    "AWS",
-    "Docker",
-    "CI/CD",
-    "TypeScript",
-    "Tailwind CSS",
-    "Bootstrap"
-  ],
-  achievements: [
-    "Developed 15+ RESTful APIs using Java and Spring Boot",
-    "Worked on Java/Spring Boot backend microservices and data persistence",
-    "Optimized relational MySQL queries and schema designs",
-    "Integrated dynamic React.js frontend interfaces with backend REST endpoints",
-    "Implemented Git branching workflows in Agile sprint teams"
+  incompatibleFrameworks: [
+    "Angular",
+    "Vue.js",
+    "Django",
+    "Flask",
+    "ASP.NET",
+    ".NET",
+    "PHP",
+    "Ruby on Rails"
   ],
   targetRoles: [
     "Software Engineer",
@@ -116,42 +141,35 @@ const candidateProfile = {
     educationEligibility: 0.05
   },
   skillPoints: {
-    "java": 10,
-    "spring boot": 10,
-    "rest api": 5,
-    "backend": 5,
-    "react": 5,
-    "mysql": 5,
-    "sql": 5,
-    "jpa": 3,
-    "hibernate": 3,
-    "microservices": 3,
-    "git": 2,
-    "aws": 2,
-    "docker": 2,
-    "maven": 2,
-    "javascript": 2
+    "java": 12,
+    "spring boot": 12,
+    "react": 10,
+    "mysql": 8,
+    "rest api": 8,
+    "spring mvc": 6,
+    "jpa": 6,
+    "jdbc": 6,
+    "sql": 6,
+    "javascript": 5,
+    "maven": 4,
+    "postman": 4,
+    "git": 4,
+    "html": 3,
+    "css": 3
   },
   searchQueries: [
-    "Java Developer fresher India",
-    "Spring Boot Developer 0-2 years India",
-    "Software Engineer fresher India",
-    "Associate Software Engineer India",
+    "Java Full Stack Developer fresher India",
+    "Java React Developer 0-2 years India",
+    "Spring Boot React Developer India",
+    "Associate Software Engineer Java India",
+    "Java Developer fresher Hyderabad",
     "Java Backend Developer junior India",
-    "Backend Developer Java Spring Boot Hyderabad",
-    "Java Developer Bangalore 0-2 years",
-    "Full Stack Developer Java React India",
-    "Software Engineer React Spring Boot India",
-    "Graduate Software Engineer India",
-    "Trainee Software Engineer India",
-    "Software Developer 2025 graduate India",
-    "Associate Engineer Java India",
-    "SDE 1 Java India",
-    "Software Engineer I India",
-    "Junior Java Developer India",
-    "Java Spring Boot React Hyderabad",
-    "Java Developer Pune 0-1 years",
-    "Associate Software Developer Chennai",
+    "Junior Java Full Stack Developer Bangalore",
+    "Software Engineer Java React 0-2 years",
+    "Graduate Software Engineer Java India",
+    "Trainee Software Engineer Java India",
+    "Java Spring Boot Developer Pune",
+    "Associate Software Developer Java Chennai",
     "Java Full Stack Developer Remote India"
   ]
 };

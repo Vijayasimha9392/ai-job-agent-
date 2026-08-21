@@ -1,4 +1,4 @@
-﻿// =====================================================================
+// =====================================================================
 // Composite Scoring & Priority Routing Engine
 // =====================================================================
 
@@ -49,15 +49,17 @@ function calculateOpportunityScore(matchScore, freshnessScore, sourceName) {
 
 /**
  * Evaluates urgency tier and email dispatch decision
+ * STRICT RULE: Only dispatch emails if matchScore >= 80 and isEligible is true
  * @param {object} job 
  * @param {object} evaluation 
- * @param {number} minEmailThreshold
+ * @param {number} [minEmailThreshold=80]
  */
-function determineDispatchPriority(job, evaluation, minEmailThreshold = 65) {
+function determineDispatchPriority(job, evaluation, minEmailThreshold = 80) {
   const matchScore = evaluation.matchScore || 0;
   const jobAgeHours = job.jobAgeHours !== null ? job.jobAgeHours : 999;
-  const isEligible = evaluation.isEligible;
+  const isEligible = Boolean(evaluation.isEligible);
 
+  // Ineligible roles are never emailed
   if (!isEligible) {
     return {
       shouldEmail: false,
@@ -68,57 +70,46 @@ function determineDispatchPriority(job, evaluation, minEmailThreshold = 65) {
     };
   }
 
-  // 1. Check URGENT conditions
-  if (jobAgeHours <= 3.0 && matchScore >= 75) {
+  // Strict User Rule: Match score MUST be >= 80 to trigger email alerts
+  if (matchScore < minEmailThreshold) {
+    return {
+      shouldEmail: false,
+      priorityLevel: "STORE_ONLY",
+      badgeText: `Below Threshold (${matchScore}%)`,
+      badgeColor: "#64748b",
+      reason: `Match score ${matchScore}/100 is below strict threshold of ${minEmailThreshold}%`
+    };
+  }
+
+  // High Urgency: Fresh (<3h) and High Score (>=80%)
+  if (jobAgeHours <= 3.0) {
     return {
       shouldEmail: true,
       priorityLevel: "URGENT",
-      badgeText: "🔥 URGENT ALERT (Posted < 3h)",
+      badgeText: `🔥 URGENT ALERT (Posted < 3h | ${matchScore}% Match)`,
       badgeColor: "#dc2626",
-      emailSubjectPrefix: "🔥 Apply Now (Posted < 3h)"
+      emailSubjectPrefix: `🔥 Urgent (${matchScore}% Match)`
     };
   }
 
-  // 2. Check HIGH PRIORITY conditions
-  if (jobAgeHours <= 6.0 && matchScore >= 85) {
+  // Top Tier Match (>= 90%)
+  if (matchScore >= 90) {
     return {
       shouldEmail: true,
-      priorityLevel: "HIGH_PRIORITY",
-      badgeText: "⚡ HIGH PRIORITY (< 6h)",
-      badgeColor: "#ea580c",
-      emailSubjectPrefix: "⚡ High Priority Match"
+      priorityLevel: "EXCELLENT",
+      badgeText: `💎 TOP MATCH (${matchScore}%)`,
+      badgeColor: "#16a34a",
+      emailSubjectPrefix: `💎 Top Match (${matchScore}%)`
     };
   }
 
-  // 3. Excellent / Strong / Good Matches
-  if (matchScore >= minEmailThreshold) {
-    return {
-      shouldEmail: true,
-      priorityLevel: matchScore >= 85 ? "EXCELLENT" : (matchScore >= 75 ? "STRONG" : "GOOD"),
-      badgeText: `✨ ${evaluation.matchLevel} (${matchScore}%)`,
-      badgeColor: matchScore >= 85 ? "#16a34a" : "#2563eb",
-      emailSubjectPrefix: "🚨 New Job Match"
-    };
-  }
-
-  // 4. Possible Match condition (55-64) - Only email if extremely fresh (<2h) & strong role match
-  if (matchScore >= 55 && jobAgeHours <= 2.0 && (evaluation.roleMatch || 0) >= 80) {
-    return {
-      shouldEmail: true,
-      priorityLevel: "POSSIBLE_FRESH",
-      badgeText: "⏱️ Fresh Opportunity (55-64%)",
-      badgeColor: "#d97706",
-      emailSubjectPrefix: "⏱️ Fresh Match"
-    };
-  }
-
-  // Otherwise, store without email
+  // Strong Match (80 - 89%)
   return {
-    shouldEmail: false,
-    priorityLevel: "STORE_ONLY",
-    badgeText: "Stored (Below Email Threshold)",
-    badgeColor: "#64748b",
-    reason: `Match score ${matchScore} is below threshold ${minEmailThreshold}`
+    shouldEmail: true,
+    priorityLevel: "STRONG",
+    badgeText: `✨ Strong Match (${matchScore}%)`,
+    badgeColor: "#2563eb",
+    emailSubjectPrefix: `✨ High Match (${matchScore}%)`
   };
 }
 

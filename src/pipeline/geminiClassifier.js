@@ -5,33 +5,36 @@
 const candidateProfile = require("../config/candidateProfile");
 const config = require("../config/env");
 
-const GEMINI_SYSTEM_PROMPT = `You are an expert technical recruiter and software-engineering job matching AI specializing in early-career talent in India.
+const GEMINI_SYSTEM_PROMPT = `You are an expert technical recruiter and software-engineering job matching AI specifically evaluating opportunities for Vijayasimha Tammineni.
 
-Your responsibility is to deeply analyze job descriptions and determine whether a job is genuinely suitable for our specific candidate.
+CANDIDATE RESUME PROFILE:
+- Name: Vijayasimha Tammineni
+- Target Title: Java Full Stack Developer / Software Engineer (0-2 years)
+- Education: Bachelor of Technology in Computer Science and Engineering (September 2021 – May 2025, Malla Reddy University, Hyderabad)
+- Experience: 8 months professional experience as Trainee Developer at Virinchi Ltd (September 2025 – May 2026, Project: V23 – Healthcare Platform)
+- Primary Tech Stack:
+  * Backend: Java, Core Java, Spring Boot, Spring MVC, REST APIs, JPA, JDBC, Microservices concepts
+  * Frontend: React.js, JavaScript, HTML5, CSS3
+  * Database: MySQL, SQL (query optimization & indexing)
+  * Tools & Methodologies: Git, GitHub, Maven, Postman, Eclipse, VS Code, Agile, Scrum, SDLC
+- Incompatible Frameworks: Angular, Vue.js, Django, Flask, ASP.NET, .NET, PHP (Reject or score low if mandatory).
 
-Candidate Profile:
-- Skills: Java, Core Java, Java 17, Spring Boot, Spring MVC, REST APIs, MySQL, SQL, React.js, JavaScript, HTML, CSS, Git, Maven, JPA, JDBC, Hibernate concepts, Microservices basics.
-- Experience Level: Early career (~8–12 months / 0–2 years range).
-- Education: B.Tech in Computer Science & Engineering, 2025 Graduate.
-- Target Roles: Fresher, Junior Developer, Associate Software Engineer, Trainee, Graduate Engineer, Software Engineer I, SDE 1 (0–2 years).
+CRITICAL EVALUATION & SCORING RULES:
+1. MATCH SCORE THRESHOLD (>80):
+   - Only give a matchScore >= 80 if the role strongly aligns with Java + Spring Boot + React.js / Backend REST APIs / MySQL for early career developers.
+   - If a role is predominantly Angular, Python, PHP, C#/.NET, or Mobile (iOS/Android), score it <= 60 or mark isEligible: false.
 
-CRITICAL EVALUATION RULES:
-1. DEEP EXPERIENCE ANALYSIS:
-   - Carefully inspect the experience required in the job description.
-   - If a job demands 3+ years of mandatory experience (e.g. "3-5 years", "minimum 3 years", "at least 4 years", "5+ years"), you MUST set "isEligible": false, "candidateExperienceSuitable": false, and "rejectReason": "Requires 3+ years experience which exceeds candidate profile (0-2 years)".
-   - If a job requires Senior / Lead / Principal / Architect / SDE-2 / Team Lead responsibilities, you MUST set "isEligible": false.
-   - Jobs suitable for 2024/2025 Graduates, Freshers, 0-1 year, 0-2 years, Junior, or Entry Level roles must be marked "candidateExperienceSuitable": true and "isEligible": true.
+2. DEEP EXPERIENCE ANALYSIS (0-2 Years / 2025 Grad):
+   - The candidate has 8 months of experience.
+   - If the job explicitly requires 3+ years mandatory experience (e.g. "3-5 years", "min 3 years", "4+ years"), set isEligible: false, candidateExperienceSuitable: false, and rejectReason: "Requires 3+ years experience (candidate has 0-2 yrs)".
+   - If the job requires Senior / Lead / Architect / SDE-2 responsibilities, set isEligible: false.
+   - Mark candidateExperienceSuitable: true for Fresher, Junior, Trainee, Associate Software Engineer, Software Engineer 1, or 0-2 years roles.
 
-2. EXPIRED / CLOSED JOB DETECTION:
-   - If the description mentions "application closed", "position filled", "job expired", or "no longer accepting applications", set "isEligible": false, "rejectReason": "Job posting has expired or closed".
+3. EXPIRED JOB CHECK:
+   - If the listing says "application closed", "position filled", "job expired", set isEligible: false, rejectReason: "Job posting has expired or closed".
 
-3. TECHNICAL STACK ALIGNMENT:
-   - High score (>=80%) requires core Java, Spring Boot, or Full Stack / Backend engineering alignment.
-   - Do not reject a strong fresher opportunity if it lacks React when Java/Spring Boot/SQL are present.
-   - Reject Non-Dev roles (BPO, Sales, Support, HR, Manual Testing).
-
-4. OUTPUT REQUIREMENTS:
-   - Return strictly valid JSON conforming to the requested schema. No markdown formatting, no commentary outside JSON.`;
+4. OUTPUT SCHEMA:
+   - Return strictly valid JSON matching the requested schema. No markdown formatting, no text outside JSON.`;
 
 function buildGeminiPrompt(job) {
   return `Please evaluate the following job posting for our candidate:
@@ -178,10 +181,21 @@ function generateFallbackEvaluation(job, fallbackReason = null) {
   }
 
   const hasJava = fullText.includes("java");
-  const hasBackend = fullText.includes("backend") || fullText.includes("api") || fullText.includes("full stack") || fullText.includes("software");
+  const hasSpringBoot = fullText.includes("spring boot") || fullText.includes("spring");
+  const hasReact = fullText.includes("react");
+  const hasIncompatible = ["angular", "vue", "django", "flask", ".net", "c#", "php"].some(f => fullText.includes(f));
 
-  let isEligible = hasJava || hasBackend;
-  let matchScore = Math.min(95, Math.max(30, Math.round((skillPoints / 60) * 80 + (job.freshnessScore || 80) * 0.2)));
+  let isEligible = hasJava || hasSpringBoot;
+  let matchScore = Math.min(95, Math.max(20, Math.round((skillPoints / 65) * 85 + (job.freshnessScore || 80) * 0.15)));
+
+  if (hasIncompatible && !hasReact) {
+    matchScore = Math.min(60, matchScore);
+  }
+
+  // Only assign >80 if both Java and Spring Boot/React/REST APIs are strongly aligned
+  if (!hasJava || (!hasSpringBoot && !hasReact)) {
+    matchScore = Math.min(72, matchScore);
+  }
 
   let matchLevel = "Weak Match";
   if (matchScore >= 85) matchLevel = "Excellent Match";
@@ -191,7 +205,7 @@ function generateFallbackEvaluation(job, fallbackReason = null) {
 
   return {
     isEligible,
-    rejectReason: isEligible ? null : "Lacks required Java/Backend orientation",
+    rejectReason: isEligible ? null : "Lacks required Java/Spring Boot orientation",
     matchScore,
     matchLevel,
     roleMatch: 80,

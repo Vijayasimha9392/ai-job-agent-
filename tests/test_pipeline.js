@@ -188,7 +188,7 @@ async function runTests() {
   // -------------------------------------------------------------------
   console.log("\n--- 4. Testing Scoring & Priority Routing ---");
 
-  test("Should route fresh (<3h) high match (>=75%) job to URGENT priority", () => {
+  test("Should route fresh (<3h) high match (>=80%) job to URGENT priority", () => {
     const mockFreshJob = {
       jobAgeHours: 0.5,
       freshnessScore: 100,
@@ -200,9 +200,33 @@ async function runTests() {
       matchScore: 90,
       matchLevel: "Excellent Match"
     };
-    const dispatch = determineDispatchPriority(mockFreshJob, mockEval, 65);
+    const dispatch = determineDispatchPriority(mockFreshJob, mockEval, 80);
     assert.strictEqual(dispatch.shouldEmail, true);
     assert.strictEqual(dispatch.priorityLevel, "URGENT");
+  });
+
+  test("Should REJECT email dispatch for scores below 80 (e.g., 61% or 75%)", () => {
+    const mockJob = {
+      jobAgeHours: 0.5,
+      freshnessScore: 100,
+      source: "Adzuna"
+    };
+    const mockEval61 = {
+      isEligible: true,
+      matchScore: 61,
+      matchLevel: "Possible Match"
+    };
+    const dispatch61 = determineDispatchPriority(mockJob, mockEval61, 80);
+    assert.strictEqual(dispatch61.shouldEmail, false);
+    assert.strictEqual(dispatch61.priorityLevel, "STORE_ONLY");
+
+    const mockEval75 = {
+      isEligible: true,
+      matchScore: 75,
+      matchLevel: "Good Match"
+    };
+    const dispatch75 = determineDispatchPriority(mockJob, mockEval75, 80);
+    assert.strictEqual(dispatch75.shouldEmail, false);
   });
 
   test("Should calculate composite OpportunityScore correctly", () => {
