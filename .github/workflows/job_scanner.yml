@@ -1,0 +1,42 @@
+name: 24/7 AI Job Recommendation Agent
+
+on:
+  schedule:
+    - cron: '*/55 * * * *'
+  workflow_dispatch:
+
+jobs:
+  scan-and-alert:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Execute Discovery, AI Scoring & Email Dispatch
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: gemini-3.6-flash
+          CANDIDATE_NAME: "Vijayasimha"
+          CANDIDATE_EMAIL: ${{ secrets.CANDIDATE_EMAIL }}
+          SMTP_HOST: smtp.gmail.com
+          SMTP_PORT: 465
+          SMTP_SECURE: true
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          SMTP_FROM: "Job Hunter AI <${{ secrets.SMTP_USER }}>"
+          ADZUNA_APP_ID: ${{ secrets.ADZUNA_APP_ID }}
+          ADZUNA_APP_KEY: ${{ secrets.ADZUNA_APP_KEY }}
+          RAPIDAPI_KEY: ${{ secrets.RAPIDAPI_KEY }}
+          MIN_MATCH_SCORE_TO_EMAIL: 75
+          MAX_JOB_AGE_HOURS: 24
+          SCHEDULE_INTERVAL_MINUTES: 55
+        run: node tests/test_live_single_run.js

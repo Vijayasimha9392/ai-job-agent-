@@ -1,0 +1,60 @@
+﻿// =====================================================================
+// Job Deduplication & SHA-256 Fingerprint Generator
+// =====================================================================
+
+const crypto = require("crypto");
+
+/**
+ * Normalizes title string for deterministic hashing
+ */
+function normalizeTitleForHashing(title) {
+  if (!title) return "";
+  return title
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Normalizes company name for hashing
+ */
+function normalizeCompanyForHashing(company) {
+  if (!company) return "";
+  return company
+    .toLowerCase()
+    .replace(/\b(inc|ltd|limited|pvt|private|corp|corporation|llc|technologies|solutions|services|software)\b/g, "")
+    .replace(/[^a-z0-9\s]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Generates canonical SHA-256 fingerprint for a job
+ * @param {object} job
+ * @returns {string} 64-char hex hash
+ */
+function generateJobFingerprint(job) {
+  const normCompany = normalizeCompanyForHashing(job.company);
+  const normTitle = normalizeTitleForHashing(job.title);
+  const refId = (job.jobReferenceId || "").trim().toLowerCase();
+  const applyUrl = (job.applicationUrl || "").split("?")[0].trim().toLowerCase(); // strip query tracking params
+  const location = (job.location || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+
+  let canonicalString;
+  if (refId && refId.length > 2 && refId !== "null" && refId !== "undefined") {
+    // Preferred primary format
+    canonicalString = `company:${normCompany}|title:${normTitle}|ref:${refId}`;
+  } else {
+    // Fallback format
+    canonicalString = `company:${normCompany}|title:${normTitle}|loc:${location}|url:${applyUrl}`;
+  }
+
+  return crypto.createHash("sha256").update(canonicalString).digest("hex");
+}
+
+module.exports = {
+  generateJobFingerprint,
+  normalizeTitleForHashing,
+  normalizeCompanyForHashing
+};
