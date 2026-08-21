@@ -61,11 +61,22 @@ const NON_INDIA_LOCATIONS = [
  * @param {object} job 
  * @returns {object} { isPass: boolean, reason?: string, filterCategory?: string }
  */
+const NON_TARGET_TECH = [
+  "c++", "embedded", "cybersecurity", "cyber security", "automotive", "hardware",
+  "diagnostic", "firmware", "autocad", "sap", "abap", "salesforce", "mainframe",
+  "cobol", "ios developer", "swift", "flutter", "android developer", "react native",
+  "ruby", "ruby on rails", "php developer", "laravel", "dotnet", ".net", "c#",
+  "golang", "rust developer"
+];
+
 function applyPreAiFilter(job) {
   const title = (job.title || "").toLowerCase();
   const desc = (job.description || "").toLowerCase();
   const location = (job.location || "").toLowerCase();
   const fullText = `${title} ${desc} ${location}`;
+
+  // Normalized title for clean word boundary checks
+  const normTitle = title.replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
 
   // 1. Expired / Inactive Job Check
   for (const phrase of EXPIRED_KEYWORDS) {
@@ -80,8 +91,8 @@ function applyPreAiFilter(job) {
 
   // 2. Title MUST contain software engineering / development terms
   const hasDevTitle = TITLE_DEV_REQUIRED.some(term => {
-    const regex = new RegExp(`\\b${term.replace(".", "\\.")}\\b`, "i");
-    return regex.test(title);
+    const regex = new RegExp(`\\b${term}\\b`, "i");
+    return regex.test(normTitle);
   });
 
   if (!hasDevTitle) {
@@ -92,10 +103,16 @@ function applyPreAiFilter(job) {
     };
   }
 
-  // 3. Reject Seniority Blacklist in Title
-  for (const term of SENIORITY_BLACKLIST) {
-    const regex = new RegExp(`\\b${term.replace(".", "\\.")}\\b`, "i");
-    if (regex.test(title)) {
+  // 3. Reject Seniority Blacklist in Title (with punctuation-clean matching)
+  const seniorityWords = [
+    "senior", "sr", "lead", "principal", "staff", "architect", "manager",
+    "director", "vp", "head", "executive", "level 2", "level ii", "level 3",
+    "level iii", "mid level", "midlevel", "sde 2", "sde ii", "sde 3", "sde iii",
+    "sde2", "sde3", "tech lead", "solution architect", "enterprise architect"
+  ];
+  for (const term of seniorityWords) {
+    const regex = new RegExp(`\\b${term}\\b`, "i");
+    if (regex.test(normTitle)) {
       return {
         isPass: false,
         reason: `Seniority / Mid-level keyword detected in title: "${term}"`,
@@ -107,11 +124,23 @@ function applyPreAiFilter(job) {
   // 4. Reject Non-Dev Blacklist in Title
   for (const term of NON_DEV_BLACKLIST) {
     const regex = new RegExp(`\\b${term}\\b`, "i");
-    if (regex.test(title)) {
+    if (regex.test(normTitle)) {
       return {
         isPass: false,
         reason: `Non-software development role detected: "${term}"`,
         filterCategory: "NON_DEV_ROLE"
+      };
+    }
+  }
+
+  // 5. Reject completely non-target hardware / embedded / C++ tech titles
+  for (const tech of NON_TARGET_TECH) {
+    const regex = new RegExp(`\\b${tech.replace("+", "\\+").replace("#", "\\#")}\\b`, "i");
+    if (regex.test(normTitle)) {
+      return {
+        isPass: false,
+        reason: `Non-target technology stack in title: "${tech}"`,
+        filterCategory: "NON_TARGET_TECH"
       };
     }
   }
