@@ -1,25 +1,21 @@
 // =====================================================================
-// Composite Scoring & Priority Routing Engine (Multi-Channel Real-Time)
+// Composite Scoring & Priority Routing Engine (Strict Freshness-First)
 // =====================================================================
 
 const SOURCE_TRUST_SCORES = {
   "Official company ATS": 100,
   "Official company careers": 100,
-  "Official ATS provider": 95,
+  "Official ATS": 95,
   "Greenhouse": 95,
   "Lever": 95,
   "Ashby": 95,
   "SmartRecruiters": 95,
   "Workday": 95,
-  "SuccessFactors": 95,
-  "Major job API": 85,
-  "JSearch API": 85,
+  "Major Job API": 85,
+  "JSearch": 85,
   "Adzuna": 85,
-  "Established aggregator": 75,
-  "Arbeitnow": 75,
-  "Remotive": 75,
-  "Unknown source": 40,
-  "Suspicious source": 0
+  "Career Feed": 70,
+  "Unknown source": 40
 };
 
 /**
@@ -55,27 +51,38 @@ function calculateOpportunityScore(matchScore = 0, freshnessScore = 0, sourceNam
 
 /**
  * Evaluates urgency tier and multi-channel notification dispatch decision
- * Match Thresholds:
- * 85–100 → Excellent
- * 75–84  → Strong
- * 65–74  → Good
- * 55–64  → Possible
- * <55    → Reject
- * 
- * Critical Flag:
- * If jobAgeMinutes <= 15 and matchScore >= 80 -> notificationPriority = "CRITICAL"
- * 
+ * Strict Freshness Policy Tiers:
+ * Tier 1 (0–1 hour):     Notify immediately (min score 60%)
+ * Tier 2 (1–6 hours):    Notify with high priority (min score 65%)
+ * Tier 3 (6–12 hours):   Notify normally (min score 68%)
+ * Tier 4 (12–24 hours):  Notify only when genuinely suitable (min score 70%)
+ * Tier 5 (24–30 hours):  Include only when strongly matched (min score 75%)
+ * >30 hours:             Strictly REJECT
+ *
  * @param {object} job 
  * @param {object} evaluation 
  * @param {number} [minNotificationThreshold=65]
  */
 function determineDispatchPriority(job, evaluation, minNotificationThreshold = 65) {
   const matchScore = evaluation.matchScore || 0;
+  const jobAgeHours = job.jobAgeHours !== null && job.jobAgeHours !== undefined ? job.jobAgeHours : 999;
   const jobAgeMinutes = job.jobAgeMinutes !== null && job.jobAgeMinutes !== undefined ? job.jobAgeMinutes : 9999;
   const isEligible = Boolean(evaluation.isEligible);
   const trustScore = getSourceTrustScore(job.source || job.sourceType);
 
-  // Ineligible or low match (<55) roles are rejected immediately
+  // 1. ABSOLUTE AGE CUTOFF: Strictly reject > 30 hours
+  if (jobAgeHours > 30.0) {
+    return {
+      shouldNotify: false,
+      shouldEmail: false,
+      priorityLevel: "REJECTED_AGE",
+      badgeText: "Rejected (>30h old)",
+      badgeColor: "#ef4444",
+      reason: `Job is ${jobAgeHours}h old, which exceeds the absolute 30-hour freshness cutoff.`
+    };
+  }
+
+  // 2. Ineligible or low match (<55) roles are rejected immediately
   if (!isEligible || matchScore < 55) {
     return {
       shouldNotify: false,
@@ -87,29 +94,33 @@ function determineDispatchPriority(job, evaluation, minNotificationThreshold = 6
     };
   }
 
-  // 1. Critical Notification Rule: Fresh (<15 min) and High Score (>=80%)
-  if (jobAgeMinutes <= 15.0 && matchScore >= 80) {
-    return {
-      shouldNotify: true,
-      shouldEmail: true,
-      priorityLevel: "CRITICAL",
-      notificationPriority: "CRITICAL",
-      badgeText: `🚨 CRITICAL MATCH (${matchScore}% Match • ${Math.round(jobAgeMinutes)}m ago)`,
-      badgeColor: "#dc2626",
-      emailSubjectPrefix: `🚨 CRITICAL: ${job.title} at ${job.company}`
-    };
+  // 3. Dynamic Qualification Thresholds based on Age Tiers
+  let dynamicMinScore = minNotificationThreshold;
+  if (jobAgeHours <= 1.0) {
+    dynamicMinScore = 60; // Tier 1: Fastest early application advantage
+  } else if (jobAgeHours <= 6.0) {
+    dynamicMinScore = 65; // Tier 2
+  } else if (jobAgeHours <= 12.0) {
+    dynamicMinScore = 68; // Tier 3
+  } else if (jobAgeHours <= 24.0) {
+    dynamicMinScore = 70; // Tier 4
+  } else {
+    dynamicMinScore = 75; // Tier 5 (24-30h requires strong match >=75%)
   }
 
-  // 2. Fast Fresh Pass (15 min fresh with score >= 60, strong role match, high trust)
-  const isFastFreshPass = jobAgeMinutes <= 15.0 && matchScore >= 60 && (evaluation.roleMatch || 0) >= 75 && trustScore >= 75;
+  // 4. Critical Push Alert: <= 30 minutes and score >= 70
+  const isCriticalPush = jobAgeMinutes <= 30.0 && matchScore >= 70;
 
-  // 3. Qualifying matches (>= minNotificationThreshold or fast fresh pass)
-  if (matchScore >= minNotificationThreshold || isFastFreshPass) {
+  if (matchScore >= dynamicMinScore) {
     let priorityLevel = "GOOD";
     let badgeText = `✨ Good Match (${matchScore}%)`;
     let badgeColor = "#2563eb";
 
-    if (matchScore >= 85) {
+    if (isCriticalPush) {
+      priorityLevel = "CRITICAL";
+      badgeText = `🚨 CRITICAL (${matchScore}% Match • ${Math.round(jobAgeMinutes)}m ago)`;
+      badgeColor = "#dc2626";
+    } else if (matchScore >= 85) {
       priorityLevel = "EXCELLENT";
       badgeText = `💎 TOP MATCH (${matchScore}%)`;
       badgeColor = "#16a34a";
@@ -122,29 +133,67 @@ function determineDispatchPriority(job, evaluation, minNotificationThreshold = 6
     return {
       shouldNotify: true,
       shouldEmail: true,
+      isCriticalPush,
       priorityLevel,
-      notificationPriority: priorityLevel === "EXCELLENT" ? "HIGH" : "NORMAL",
+      notificationPriority: isCriticalPush ? "CRITICAL" : (priorityLevel === "EXCELLENT" ? "HIGH" : "NORMAL"),
       badgeText,
       badgeColor,
-      emailSubjectPrefix: `🔥 Job Hunter AI — ${matchScore}% Match`
+      emailSubjectPrefix: isCriticalPush ? `🚨 CRITICAL: ${job.title} at ${job.company}` : `🔥 Job Hunter AI — ${matchScore}% Match`
     };
   }
 
-  // Stored without notification if below threshold
+  // Stored without notification if below tier threshold
   return {
     shouldNotify: false,
     shouldEmail: false,
     priorityLevel: "STORE_ONLY",
-    badgeText: `Below Threshold (${matchScore}%)`,
+    badgeText: `Below Tier Threshold (${matchScore}%)`,
     badgeColor: "#64748b",
-    reason: `Match score ${matchScore}/100 is below notification threshold of ${minNotificationThreshold}%`
+    reason: `Match score ${matchScore}/100 is below age-tier minimum threshold of ${dynamicMinScore}%`
   };
+}
+
+/**
+ * Strictly sorts jobs by Freshness First (publishedAt DESC), then Match Score DESC, then Trust DESC
+ * @param {Array<{job: object, evaluation: object}>} items 
+ * @returns {Array<{job: object, evaluation: object}>}
+ */
+function sortJobsByFreshnessFirst(items = []) {
+  return [...items].sort((a, b) => {
+    const jobA = a.job || a;
+    const jobB = b.job || b;
+
+    const timeA = jobA.publishedAt ? new Date(jobA.publishedAt).getTime() : 0;
+    const timeB = jobB.publishedAt ? new Date(jobB.publishedAt).getTime() : 0;
+
+    // 1. Primary sort: Publication Time DESC (Newest first)
+    const timeDiff = timeB - timeA;
+    const tenMinutesMs = 10 * 60 * 1000;
+
+    // If publication timestamps differ by more than 10 minutes, newest wins unconditionally
+    if (Math.abs(timeDiff) > tenMinutesMs) {
+      return timeDiff;
+    }
+
+    // 2. Secondary sort: Match Score DESC (Highest score wins for jobs posted around the same time)
+    const scoreA = a.evaluation?.matchScore || jobA.matchScore || 0;
+    const scoreB = b.evaluation?.matchScore || jobB.matchScore || 0;
+    const scoreDiff = scoreB - scoreA;
+    if (scoreDiff !== 0) {
+      return scoreDiff;
+    }
+
+    // 3. Tertiary sort: Source Trust Score DESC
+    const trustA = getSourceTrustScore(jobA.source || jobA.sourceType);
+    const trustB = getSourceTrustScore(jobB.source || jobB.sourceType);
+    return trustB - trustA;
+  });
 }
 
 module.exports = {
   calculateOpportunityScore,
   determineDispatchPriority,
   getSourceTrustScore,
+  sortJobsByFreshnessFirst,
   SOURCE_TRUST_SCORES
 };
-

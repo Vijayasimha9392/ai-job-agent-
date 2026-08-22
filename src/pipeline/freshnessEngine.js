@@ -1,10 +1,10 @@
 // =====================================================================
-// Job Freshness Engine - Validates publication timestamps and age
+// Job Freshness Engine - Strict 30-Hour Cutoff & Early Application Hierarchy
 // =====================================================================
 
 const config = require("../config/env");
 
-const DEFAULT_MAX_JOB_AGE_HOURS = 40.0;
+const DEFAULT_MAX_JOB_AGE_HOURS = 30.0;
 
 const EXPIRED_PHRASES = [
   "job expired",
@@ -24,22 +24,30 @@ const EXPIRED_PHRASES = [
 ];
 
 /**
+ * Calculates programmatic job age in milliseconds
+ * @param {string|Date} publishedAt 
+ * @param {Date} [referenceTime=new Date()]
+ * @returns {number|null}
+ */
+function calculateJobAgeMilliseconds(publishedAt, referenceTime = new Date()) {
+  if (!publishedAt) return null;
+  const pubDate = new Date(publishedAt);
+  if (isNaN(pubDate.getTime())) return null;
+
+  const diffMs = referenceTime.getTime() - pubDate.getTime();
+  return diffMs < 0 ? 0.0 : diffMs;
+}
+
+/**
  * Calculates programmatic job age in minutes
  * @param {string|Date} publishedAt 
  * @param {Date} [referenceTime=new Date()]
  * @returns {number|null}
  */
 function calculateJobAgeMinutes(publishedAt, referenceTime = new Date()) {
-  if (!publishedAt) return null;
-  const pubDate = new Date(publishedAt);
-  if (isNaN(pubDate.getTime())) return null;
-
-  const diffMs = referenceTime.getTime() - pubDate.getTime();
-  if (diffMs < 0) {
-    // Clock skew protection (job published in future by few seconds/minutes)
-    return 0.0;
-  }
-  return parseFloat((diffMs / (1000 * 60)).toFixed(2));
+  const ms = calculateJobAgeMilliseconds(publishedAt, referenceTime);
+  if (ms === null) return null;
+  return parseFloat((ms / 60000).toFixed(2));
 }
 
 /**
@@ -49,25 +57,28 @@ function calculateJobAgeMinutes(publishedAt, referenceTime = new Date()) {
  * @returns {number|null}
  */
 function calculateJobAgeHours(publishedAt, referenceTime = new Date()) {
-  const mins = calculateJobAgeMinutes(publishedAt, referenceTime);
-  if (mins === null) return null;
-  return parseFloat((mins / 60).toFixed(2));
+  const ms = calculateJobAgeMilliseconds(publishedAt, referenceTime);
+  if (ms === null) return null;
+  return parseFloat((ms / 3600000).toFixed(2));
 }
 
 /**
- * Returns Freshness Score (0-100) and Priority Tier based on job age minutes
- * Priority:
- * 0–5 minutes     → CRITICAL
- * 5–15 minutes    → URGENT
- * 15–30 minutes   → VERY FRESH
- * 30–60 minutes   → FRESH
- * 1–6 hours       → HIGH PRIORITY
- * 6–24 hours      → NORMAL
- * 24–40 hours     → LOW FRESHNESS
- * > 40 hours      → REJECT
+ * Returns Freshness Score (0-100) and Priority Tier based on job age
+ * Strict Hierarchy:
+ * 0–5 minutes     → HIGHEST PRIORITY (100)
+ * 5–15 minutes    → CRITICAL (98)
+ * 15–30 minutes   → VERY HIGH PRIORITY (95)
+ * 30–60 minutes   → HIGH PRIORITY (90)
+ * 1–3 hours       → VERY FRESH (85)
+ * 3–6 hours       → FRESH (80)
+ * 6–12 hours      → RECENT (75)
+ * 12–24 hours     → ACCEPTABLE (70)
+ * 24–30 hours     → LOWEST ACCEPTABLE (60)
+ * > 30 hours      → REJECT (0)
+ *
  * @param {number|null} jobAgeMinutes 
  * @param {boolean} freshnessVerified
- * @param {number} [maxAllowedHours=40]
+ * @param {number} [maxAllowedHours=30]
  */
 function getFreshnessScore(jobAgeMinutes, freshnessVerified = true, maxAllowedHours = config.maxJobAgeHours || DEFAULT_MAX_JOB_AGE_HOURS) {
   if (jobAgeMinutes === null || isNaN(jobAgeMinutes)) {
@@ -82,21 +93,21 @@ function getFreshnessScore(jobAgeMinutes, freshnessVerified = true, maxAllowedHo
 
   const jobAgeHours = parseFloat((jobAgeMinutes / 60).toFixed(2));
 
-  // Reject anything older than 40 hours
+  // ABSOLUTE MAXIMUM AGE: Reject anything older than 30 hours
   if (jobAgeHours > maxAllowedHours) {
     return {
       score: 0,
       tier: "REJECTED_EXPIRED",
-      priorityLabel: `Stale (> ${maxAllowedHours}h)`,
+      priorityLabel: `Stale (> ${maxAllowedHours}h cutoff)`,
       isAcceptable: false,
-      reason: `Job is ${jobAgeHours} hours old (exceeds ${maxAllowedHours}h freshness cutoff)`
+      reason: `Job is ${jobAgeHours} hours old (exceeds absolute ${maxAllowedHours}h freshness cutoff)`
     };
   }
 
-  // If freshness is not reliably verified, do NOT mark as CRITICAL or URGENT
+  // If freshness timestamp is not verified, do NOT award Tier 1/2 priority
   if (!freshnessVerified) {
     return {
-      score: 65,
+      score: 60,
       tier: "NORMAL",
       priorityLabel: "Normal (Unverified Date)",
       isAcceptable: true,
@@ -104,54 +115,68 @@ function getFreshnessScore(jobAgeMinutes, freshnessVerified = true, maxAllowedHo
     };
   }
 
-  // Programmatic Tiers
+  // Programmatic Freshness Tiers
   if (jobAgeMinutes <= 5.0) {
     return {
       score: 100,
-      tier: "CRITICAL",
-      priorityLabel: "🚨 CRITICAL (Posted < 5 min ago)",
+      tier: "HIGHEST_PRIORITY",
+      priorityLabel: "🚨 HIGHEST PRIORITY (Posted < 5 min ago)",
       isAcceptable: true
     };
   } else if (jobAgeMinutes <= 15.0) {
     return {
       score: 98,
-      tier: "URGENT",
-      priorityLabel: "🔥 URGENT (Posted 5-15 min ago)",
+      tier: "CRITICAL",
+      priorityLabel: "🔥 CRITICAL (Posted 5-15 min ago)",
       isAcceptable: true
     };
   } else if (jobAgeMinutes <= 30.0) {
     return {
       score: 95,
-      tier: "VERY_FRESH",
-      priorityLabel: "⚡ VERY FRESH (Posted 15-30 min ago)",
+      tier: "VERY_HIGH_PRIORITY",
+      priorityLabel: "⚡ VERY HIGH PRIORITY (Posted 15-30 min ago)",
       isAcceptable: true
     };
   } else if (jobAgeMinutes <= 60.0) {
     return {
       score: 90,
-      tier: "FRESH",
-      priorityLabel: "✨ FRESH (Posted 30-60 min ago)",
+      tier: "HIGH_PRIORITY",
+      priorityLabel: "✨ HIGH PRIORITY (Posted 30-60 min ago)",
+      isAcceptable: true
+    };
+  } else if (jobAgeHours <= 3.0) {
+    return {
+      score: 85,
+      tier: "VERY_FRESH",
+      priorityLabel: `🌟 VERY FRESH (Posted ${Math.round(jobAgeHours)}h ago)`,
       isAcceptable: true
     };
   } else if (jobAgeHours <= 6.0) {
     return {
-      score: 85,
-      tier: "HIGH_PRIORITY",
-      priorityLabel: `High Priority (Posted ${Math.round(jobAgeHours)}h ago)`,
+      score: 80,
+      tier: "FRESH",
+      priorityLabel: `🟢 FRESH (Posted ${Math.round(jobAgeHours)}h ago)`,
+      isAcceptable: true
+    };
+  } else if (jobAgeHours <= 12.0) {
+    return {
+      score: 75,
+      tier: "RECENT",
+      priorityLabel: `🕒 RECENT (Posted ${Math.round(jobAgeHours)}h ago)`,
       isAcceptable: true
     };
   } else if (jobAgeHours <= 24.0) {
     return {
-      score: 75,
-      tier: "NORMAL",
-      priorityLabel: `Normal (Posted ${Math.round(jobAgeHours)}h ago)`,
+      score: 70,
+      tier: "ACCEPTABLE",
+      priorityLabel: `📅 ACCEPTABLE (Posted ${Math.round(jobAgeHours)}h ago)`,
       isAcceptable: true
     };
   } else {
     return {
       score: 60,
-      tier: "LOW_FRESHNESS",
-      priorityLabel: `Low Freshness (Posted ${Math.round(jobAgeHours)}h ago)`,
+      tier: "LOWEST_ACCEPTABLE",
+      priorityLabel: `⏳ LOWEST ACCEPTABLE (Posted ${Math.round(jobAgeHours)}h ago)`,
       isAcceptable: true
     };
   }
@@ -177,12 +202,14 @@ function evaluateJobFreshness(job, referenceTime = new Date()) {
     }
   }
 
+  const jobAgeMilliseconds = calculateJobAgeMilliseconds(job.publishedAt, referenceTime);
   const jobAgeMinutes = calculateJobAgeMinutes(job.publishedAt, referenceTime);
   const jobAgeHours = calculateJobAgeHours(job.publishedAt, referenceTime);
   const freshnessMeta = getFreshnessScore(jobAgeMinutes, job.freshnessVerified);
 
   const updatedJob = {
     ...job,
+    jobAgeMilliseconds,
     jobAgeMinutes,
     jobAgeHours,
     freshnessVerified: freshnessMeta.freshnessVerified !== undefined ? freshnessMeta.freshnessVerified : job.freshnessVerified,
@@ -195,7 +222,7 @@ function evaluateJobFreshness(job, referenceTime = new Date()) {
     return {
       isFresh: false,
       job: updatedJob,
-      reason: freshnessMeta.reason || "Failed freshness evaluation"
+      reason: freshnessMeta.reason || "Failed freshness evaluation (exceeds 30h maximum age)"
     };
   }
 
@@ -206,6 +233,7 @@ function evaluateJobFreshness(job, referenceTime = new Date()) {
 }
 
 module.exports = {
+  calculateJobAgeMilliseconds,
   calculateJobAgeMinutes,
   calculateJobAgeHours,
   getFreshnessScore,
@@ -213,4 +241,3 @@ module.exports = {
   DEFAULT_MAX_JOB_AGE_HOURS,
   EXPIRED_PHRASES
 };
-

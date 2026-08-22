@@ -8,7 +8,7 @@ const { normalizeJob, extractExperience, extractCommonSkills } = require("../src
 const { evaluateJobFreshness, calculateJobAgeMinutes, calculateJobAgeHours, getFreshnessScore } = require("../src/pipeline/freshnessEngine");
 const { generateJobFingerprint, normalizeCompanyForHashing, normalizeTitleForHashing } = require("../src/pipeline/fingerprintEngine");
 const { applyPreAiFilter } = require("../src/pipeline/preAiFilter");
-const { calculateOpportunityScore, determineDispatchPriority, getSourceTrustScore } = require("../src/pipeline/scoringEngine");
+const { calculateOpportunityScore, determineDispatchPriority, getSourceTrustScore, sortJobsByFreshnessFirst } = require("../src/pipeline/scoringEngine");
 const { renderSummaryEmail, formatDisplayDate } = require("../src/notifications/emailRenderer");
 const { formatSingleJobTelegram, formatBatchTelegramMessages, escapeHtml } = require("../src/notifications/telegram.service");
 const { formatPushPayload } = require("../src/notifications/push.service");
@@ -51,26 +51,26 @@ async function runAllTests() {
     assert.strictEqual(hrs <= 0.1, true);
   });
 
-  await runTest("Freshness Tiers: 0-5 min is CRITICAL, 5-15 min is URGENT", () => {
+  await runTest("Freshness Tiers: 0-5 min is HIGHEST_PRIORITY, 5-15 min is CRITICAL", () => {
     const criticalMeta = getFreshnessScore(3.0, true);
-    assert.strictEqual(criticalMeta.tier, "CRITICAL");
+    assert.strictEqual(criticalMeta.tier, "HIGHEST_PRIORITY");
     assert.strictEqual(criticalMeta.score, 100);
 
     const urgentMeta = getFreshnessScore(12.0, true);
-    assert.strictEqual(urgentMeta.tier, "URGENT");
+    assert.strictEqual(urgentMeta.tier, "CRITICAL");
     assert.strictEqual(urgentMeta.score, 98);
   });
 
-  await runTest("Freshness Cutoff: >40h is REJECTED", () => {
-    const staleMeta = getFreshnessScore(41 * 60, true, 40);
+  await runTest("Freshness Cutoff: >30h is REJECTED", () => {
+    const staleMeta = getFreshnessScore(31 * 60, true, 30);
     assert.strictEqual(staleMeta.isAcceptable, false);
     assert.strictEqual(staleMeta.tier, "REJECTED_EXPIRED");
   });
 
-  await runTest("Unverified publishedAt cannot be marked as CRITICAL or URGENT", () => {
+  await runTest("Unverified publishedAt cannot be marked as HIGHEST_PRIORITY or CRITICAL", () => {
     const unverifiedMeta = getFreshnessScore(2.0, false);
+    assert.notStrictEqual(unverifiedMeta.tier, "HIGHEST_PRIORITY");
     assert.notStrictEqual(unverifiedMeta.tier, "CRITICAL");
-    assert.notStrictEqual(unverifiedMeta.tier, "URGENT");
     assert.strictEqual(unverifiedMeta.tier, "NORMAL");
   });
 
@@ -147,18 +147,42 @@ async function runAllTests() {
   // -------------------------------------------------------------------
   console.log("\n▶ [5/6] Opportunity Scoring & Priority Flags Tests");
 
-  await runTest("Formula: OpportunityScore = (Match * 0.65) + (Freshness * 0.25) + (Trust * 0.10)", () => {
+  await runTest("Opportunity Formula: (Match * 0.65) + (Freshness * 0.25) + (Trust * 0.10)", () => {
     const opp = calculateOpportunityScore(90, 100, "Greenhouse");
     // (90 * 0.65 = 58.5) + (100 * 0.25 = 25.0) + (95 * 0.10 = 9.5) = 93.0
     assert.strictEqual(opp.opportunityScore, 93);
   });
 
   await runTest("Critical Priority Flag: <=15 min and score >= 80", () => {
-    const freshJob = { title: "Java Developer", company: "Razorpay", jobAgeMinutes: 4.5, source: "Greenhouse" };
+    const freshJob = { title: "Java Developer", company: "Razorpay", jobAgeMinutes: 4.5, jobAgeHours: 0.08, source: "Greenhouse" };
     const evalResult = { isEligible: true, matchScore: 88, roleMatch: 90 };
     const priority = determineDispatchPriority(freshJob, evalResult, 65);
     assert.strictEqual(priority.shouldNotify, true);
     assert.strictEqual(priority.priorityLevel, "CRITICAL");
+  });
+
+  await runTest("Freshness-First Sorting: 8 min ago (82% match) sorts BEFORE 4h ago (93% match)", () => {
+    const now = new Date();
+    const jobNew = {
+      job: {
+        title: "Software Engineer",
+        company: "Company A",
+        publishedAt: new Date(now.getTime() - 8 * 60 * 1000).toISOString()
+      },
+      evaluation: { matchScore: 82 }
+    };
+    const jobOld = {
+      job: {
+        title: "Java Backend Developer",
+        company: "Company D",
+        publishedAt: new Date(now.getTime() - 4 * 60 * 60 * 1000).toISOString()
+      },
+      evaluation: { matchScore: 93 }
+    };
+
+    const sorted = sortJobsByFreshnessFirst([jobOld, jobNew]);
+    assert.strictEqual(sorted[0].job.company, "Company A");
+    assert.strictEqual(sorted[1].job.company, "Company D");
   });
 
   // -------------------------------------------------------------------
@@ -209,7 +233,7 @@ async function runAllTests() {
 
   await runTest("Telegram Service formats clean HTML message and escapes dynamic strings", () => {
     const tgMsg = formatSingleJobTelegram(sampleBatch[0]);
-    assert.strictEqual(tgMsg.includes("🚨 <b>CRITICAL JOB MATCH</b>"), true);
+    assert.strictEqual(tgMsg.includes("CRITICAL FRESH MATCH"), true);
     assert.strictEqual(tgMsg.includes("🏢 <b>Company:</b> Razorpay"), true);
     assert.strictEqual(tgMsg.includes("🎯 <b>Match:</b> 88%"), true);
     assert.strictEqual(tgMsg.includes("<a href="), true);
@@ -217,7 +241,7 @@ async function runAllTests() {
 
   await runTest("Push Notification Service creates concise, high-priority FCM payload", () => {
     const pushPayload = formatPushPayload(sampleBatch);
-    assert.strictEqual(pushPayload.title.includes("Software Engineer I (Java)"), true);
+    assert.strictEqual(pushPayload.title.includes("Fresh Job"), true);
     assert.strictEqual(pushPayload.body.includes("Razorpay"), true);
     assert.strictEqual(pushPayload.data.priority, "CRITICAL");
   });

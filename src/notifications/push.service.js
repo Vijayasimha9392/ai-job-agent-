@@ -38,14 +38,14 @@ function getFirebaseAdmin() {
 function formatPushPayload(batch) {
   if (batch.length === 1) {
     const { job, evaluation, dispatchMeta } = batch[0];
-    const isCritical = dispatchMeta?.priorityLevel === "CRITICAL" || (job.jobAgeMinutes !== null && job.jobAgeMinutes <= 15);
+    const isCritical = dispatchMeta?.priorityLevel === "CRITICAL" || (job.jobAgeMinutes !== null && job.jobAgeMinutes <= 30 && evaluation.matchScore >= 70);
     const ageStr = job.jobAgeMinutes !== null 
-      ? (job.jobAgeMinutes < 60 ? `${Math.round(job.jobAgeMinutes)} min ago` : `${Math.round(job.jobAgeHours)}h ago`)
-      : "Just now";
+      ? (job.jobAgeMinutes < 60 ? `${Math.round(job.jobAgeMinutes)} Min Ago` : `${Math.round(job.jobAgeHours)}h Ago`)
+      : "Recently";
 
     return {
-      title: isCritical ? `🚨 ${job.title} — ${evaluation.matchScore}% Match` : `⚡ ${job.title} — ${evaluation.matchScore}% Match`,
-      body: `${job.company} • ${job.location} • Posted ${ageStr}`,
+      title: isCritical ? `🚨 Fresh Job — Posted ${ageStr}` : `⚡ ${job.title} — ${evaluation.matchScore}% Match`,
+      body: `${job.title} at ${job.company} • ${job.location} (${evaluation.matchScore}% Match)`,
       data: {
         url: job.applicationUrl || "",
         jobId: String(job.jobId || ""),
@@ -56,16 +56,16 @@ function formatPushPayload(batch) {
   }
 
   // Multiple jobs
-  const topJob = batch.reduce((prev, current) => (prev.evaluation?.matchScore > current.evaluation?.matchScore ? prev : current), batch[0]);
-  const hasCritical = batch.some(b => b.dispatchMeta?.priorityLevel === "CRITICAL" || (b.job?.jobAgeMinutes !== null && b.job?.jobAgeMinutes <= 15));
+  const newestJob = batch[0];
+  const hasCritical = batch.some(b => b.dispatchMeta?.priorityLevel === "CRITICAL" || (b.job?.jobAgeMinutes !== null && b.job?.jobAgeMinutes <= 30));
 
   return {
-    title: hasCritical ? `🚨 ${batch.length} New Jobs Found (Critical)` : `🔥 ${batch.length} New Job Matches Found`,
-    body: `Top match: ${topJob.job.title} at ${topJob.job.company} — ${topJob.evaluation.matchScore}%`,
+    title: hasCritical ? `🚨 ${batch.length} Fresh Jobs Found (Newest: ${Math.round(newestJob.job.jobAgeMinutes || 10)}m ago)` : `🔥 ${batch.length} New Job Matches Found`,
+    body: `Newest: ${newestJob.job.title} at ${newestJob.job.company} (${newestJob.evaluation.matchScore}% Match)`,
     data: {
-      url: topJob.job.applicationUrl || "",
+      url: newestJob.job.applicationUrl || "",
       batchCount: String(batch.length),
-      topJobId: String(topJob.job.jobId || "")
+      topJobId: String(newestJob.job.jobId || "")
     }
   };
 }

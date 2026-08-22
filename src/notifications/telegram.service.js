@@ -1,8 +1,9 @@
 // =====================================================================
-// Telegram Bot API Notification Service - Strict Verified Jobs
+// Telegram Bot API Notification Service - Strict Freshness-First Alerts
 // =====================================================================
 
 const config = require("../config/env");
+const { sortJobsByFreshnessFirst } = require("../pipeline/scoringEngine");
 
 /**
  * Escapes HTML characters for Telegram Bot API
@@ -16,19 +17,30 @@ function escapeHtml(text) {
 }
 
 /**
+ * Formats clean age string (e.g. "8 minutes ago", "1 hour ago", "4 hours ago")
+ */
+function formatAgeString(jobAgeMinutes, jobAgeHours) {
+  if (jobAgeMinutes === null || jobAgeMinutes === undefined || isNaN(jobAgeMinutes)) {
+    return "Recently";
+  }
+  if (jobAgeMinutes < 1) return "Just now";
+  if (jobAgeMinutes < 60) return `${Math.round(jobAgeMinutes)} minutes ago`;
+  const hrs = Math.round(jobAgeHours || jobAgeMinutes / 60);
+  return hrs === 1 ? "1 hour ago" : `${hrs} hours ago`;
+}
+
+/**
  * Formats a single job entry for Telegram
  */
 function formatSingleJobTelegram(item) {
   const { job, evaluation, dispatchMeta } = item;
-  const isCritical = dispatchMeta?.priorityLevel === "CRITICAL" || (job.jobAgeMinutes !== null && job.jobAgeMinutes <= 15);
-  const ageStr = job.jobAgeMinutes !== null 
-    ? (job.jobAgeMinutes < 60 ? `${Math.round(job.jobAgeMinutes)}m ago` : `${Math.round(job.jobAgeHours)}h ago`)
-    : "Not specified";
+  const isCritical = dispatchMeta?.priorityLevel === "CRITICAL" || (job.jobAgeMinutes !== null && job.jobAgeMinutes <= 30);
+  const ageStr = formatAgeString(job.jobAgeMinutes, job.jobAgeHours);
 
   const skills = (evaluation.matchedSkills || ["Java", "Spring Boot"]).slice(0, 5);
   const skillsList = skills.map(s => `✅ ${escapeHtml(s)}`).join("\n");
 
-  const header = isCritical ? "🚨 <b>CRITICAL JOB MATCH</b>" : "🔥 <b>VERIFIED JOB MATCH</b>";
+  const header = isCritical ? `🚨 <b>CRITICAL FRESH MATCH (Posted ${ageStr})</b>` : `🔥 <b>NEW JOB MATCH (Posted ${ageStr})</b>`;
 
   return `${header}
 
@@ -37,9 +49,9 @@ function formatSingleJobTelegram(item) {
 📍 <b>Location:</b> ${escapeHtml(job.location)} (${escapeHtml(job.workMode || "On-site")})
 🆔 <b>Job ID:</b> <code>${escapeHtml(job.sourceJobId || job.jobReferenceId || job.jobId)}</code>
 🌐 <b>Source:</b> ${escapeHtml(job.source)} (${escapeHtml(job.sourceType || "Official ATS")})
-🕒 <b>Published:</b> ${ageStr}
+🕒 <b>Posted:</b> ${ageStr}
 🎯 <b>Match:</b> ${evaluation.matchScore}% (${escapeHtml(evaluation.matchLevel || "Strong Match")})
-🛡️ <b>Status:</b> Verified Active Vacancy URL
+🛡️ <b>Status:</b> Verified Active Vacancy URL (HTTP 200)
 
 ${skillsList}
 
@@ -50,29 +62,27 @@ ${skillsList}
 }
 
 /**
- * Formats multiple jobs into consolidated Telegram message(s)
+ * Formats multiple jobs into consolidated Telegram message(s) sorted newest-first
  */
 function formatBatchTelegramMessages(batch) {
-  if (batch.length === 1) {
-    return [formatSingleJobTelegram(batch[0])];
+  const sortedBatch = sortJobsByFreshnessFirst(batch);
+  if (sortedBatch.length === 1) {
+    return [formatSingleJobTelegram(sortedBatch[0])];
   }
 
   const messages = [];
-  let currentMsg = `🔥 <b>Job Hunter AI • Verified Alert</b>\n${batch.length} new verified matching jobs discovered\n\n`;
+  let currentMsg = `🔥 <b>Job Hunter AI • ${sortedBatch.length} New Matching Jobs</b>\n<i>(Prioritized by freshness — newest first)</i>\n\n`;
 
-  for (let i = 0; i < batch.length; i++) {
-    const { job, evaluation, dispatchMeta } = batch[i];
-    const isCritical = dispatchMeta?.priorityLevel === "CRITICAL" || (job.jobAgeMinutes !== null && job.jobAgeMinutes <= 15);
-    const ageStr = job.jobAgeMinutes !== null 
-      ? (job.jobAgeMinutes < 60 ? `${Math.round(job.jobAgeMinutes)}m ago` : `${Math.round(job.jobAgeHours)}h ago`)
-      : "Not specified";
+  for (let i = 0; i < sortedBatch.length; i++) {
+    const { job, evaluation, dispatchMeta } = sortedBatch[i];
+    const isCritical = dispatchMeta?.priorityLevel === "CRITICAL" || (job.jobAgeMinutes !== null && job.jobAgeMinutes <= 30);
+    const ageStr = formatAgeString(job.jobAgeMinutes, job.jobAgeHours);
 
-    const itemText = `${i + 1}️⃣ ${isCritical ? "🚨 <b>[CRITICAL]</b> " : ""}<b>${escapeHtml(job.title)}</b>
-🏢 <b>Company:</b> ${escapeHtml(job.company)} • <i>via ${escapeHtml(job.source)}</i>
-📍 <b>Location:</b> ${escapeHtml(job.location)}
-🆔 <b>Job ID:</b> <code>${escapeHtml(job.sourceJobId || job.jobReferenceId || job.jobId)}</code>
-🎯 <b>Match:</b> ${evaluation.matchScore}% | 🕒 ${ageStr}
-🔗 <b>Apply:</b> <a href="${job.applicationUrl}">Apply on Verified Vacancy Page</a>\n\n`;
+    const itemText = `<b>#${i + 1} — Posted ${ageStr}</b> ${isCritical ? "🚨 [CRITICAL]" : ""}
+💼 <b>${escapeHtml(job.title)}</b> — ${escapeHtml(job.company)}
+🎯 <b>Match:</b> ${evaluation.matchScore}% | 📍 ${escapeHtml(job.location)}
+🌐 <b>Source:</b> ${escapeHtml(job.source)} (<code>${escapeHtml(job.sourceJobId || job.jobReferenceId || job.jobId)}</code>)
+🔗 <b>Apply:</b> <a href="${job.applicationUrl}">Apply on Verified Portal</a>\n\n`;
 
     if ((currentMsg + itemText).length > 3900) {
       messages.push(currentMsg.trim());
@@ -164,5 +174,6 @@ module.exports = {
   sendBatch,
   formatSingleJobTelegram,
   formatBatchTelegramMessages,
-  escapeHtml
+  escapeHtml,
+  formatAgeString
 };

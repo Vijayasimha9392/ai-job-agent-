@@ -45,7 +45,7 @@ const config = {
   minMatchScore: parseInt(process.env.MIN_MATCH_SCORE || "65", 10),
   minMatchScoreCritical: parseInt(process.env.MIN_MATCH_SCORE_CRITICAL || "60", 10),
   minMatchScoreToEmail: parseInt(process.env.MIN_MATCH_SCORE_TO_EMAIL || "65", 10),
-  maxJobAgeHours: parseFloat(process.env.MAX_JOB_AGE_HOURS || "40"),
+  maxJobAgeHours: parseFloat(process.env.MAX_JOB_AGE_HOURS || "30"),
   safetyBufferMinutes: parseInt(process.env.SAFETY_BUFFER_MINUTES || "15", 10),
   timezone: process.env.TIMEZONE || "Asia/Kolkata",
 

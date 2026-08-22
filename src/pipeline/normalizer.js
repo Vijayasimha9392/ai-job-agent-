@@ -110,16 +110,36 @@ function normalizeJob(rawJob, sourceName = "Custom") {
     workMode = "Hybrid";
   }
 
-  // Parse Published Date (Do not invent timestamps if source does not provide)
+  // Extract separate publication and update timestamps
   let publishedAt = null;
+  let sourceCreatedAt = null;
+  let sourceUpdatedAt = null;
   let freshnessVerified = false;
-  const rawDate = rawJob.publishedAt || rawJob.job_posted_at_datetime_utc || rawJob.created_at || rawJob.publication_date || rawJob.posted_date || rawJob.date;
 
-  if (rawDate) {
-    const parsed = new Date(rawDate);
-    if (!isNaN(parsed.getTime())) {
-      publishedAt = parsed.toISOString();
+  const creationDateRaw = rawJob.createdAt || rawJob.created_at || rawJob.created || rawJob.publishedAt || 
+                          rawJob.releasedDate || rawJob.postedAt || rawJob.posted_date || 
+                          rawJob.publication_date || rawJob.job_posted_at_datetime_utc;
+
+  const updateDateRaw = rawJob.updatedAt || rawJob.updated_at || rawJob.lastModified || rawJob.modifiedAt;
+
+  if (creationDateRaw) {
+    const parsedCreated = new Date(creationDateRaw);
+    if (!isNaN(parsedCreated.getTime())) {
+      sourceCreatedAt = parsedCreated.toISOString();
+      publishedAt = parsedCreated.toISOString();
       freshnessVerified = true;
+    }
+  }
+
+  if (updateDateRaw) {
+    const parsedUpdated = new Date(updateDateRaw);
+    if (!isNaN(parsedUpdated.getTime())) {
+      sourceUpdatedAt = parsedUpdated.toISOString();
+      // If creation date is absent, use update timestamp as secondary publishedAt fallback
+      if (!publishedAt) {
+        publishedAt = parsedUpdated.toISOString();
+        freshnessVerified = true;
+      }
     }
   }
 
@@ -157,10 +177,13 @@ function normalizeJob(rawJob, sourceName = "Custom") {
     maximumExperience: maxExperience,
     education: rawJob.education || "B.Tech / B.E. / MCA / Any Graduate",
     publishedAt,
+    sourceCreatedAt,
+    sourceUpdatedAt,
     discoveredAt,
     retrievedAt: discoveredAt,
-    jobAgeMinutes: null, // Will be computed programmatically by FreshnessEngine
-    jobAgeHours: null,   // Will be computed programmatically by FreshnessEngine
+    jobAgeMilliseconds: null,
+    jobAgeMinutes: null,
+    jobAgeHours: null,
     freshnessVerified,
     applicationUrl,
     companyCareersUrl,

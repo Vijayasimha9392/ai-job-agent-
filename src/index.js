@@ -25,7 +25,11 @@ const { evaluateJobFreshness } = require("./pipeline/freshnessEngine");
 const { generateJobFingerprint } = require("./pipeline/fingerprintEngine");
 const { applyPreAiFilter } = require("./pipeline/preAiFilter");
 const { classifyJobWithGemini } = require("./pipeline/geminiClassifier");
-const { determineDispatchPriority, calculateOpportunityScore } = require("./pipeline/scoringEngine");
+const { 
+  determineDispatchPriority, 
+  calculateOpportunityScore,
+  sortJobsByFreshnessFirst
+} = require("./pipeline/scoringEngine");
 const { renderSummaryEmail } = require("./notifications/emailRenderer");
 const { dispatchNotificationBatch } = require("./notifications/notification.service");
 const { startServer } = require("./server");
@@ -77,9 +81,9 @@ async function runScanCycle() {
           continue;
         }
 
-        // Step C: Freshness Check (< 40 Hours & Non-Expired)
+        // Step C: Freshness Check (<= 30 Hours & Non-Expired)
         const freshness = evaluateJobFreshness(normalized, cycleStartTime);
-        if (!freshness.isFresh) {
+        if (!freshness.isFresh || (freshness.job.jobAgeHours !== null && freshness.job.jobAgeHours > 30.0)) {
           continue;
         }
         const freshJob = freshness.job;
@@ -140,12 +144,13 @@ async function runScanCycle() {
       }
     }
 
-    // Step 3: DISPATCH EXACTLY ONE SINGLE SUMMARY EMAIL + TELEGRAM ALERT
-    console.log(`\n📬 [Consolidated Dispatcher] Preparing ONE single summary alert (${qualifiedJobs.length} Qualified Jobs)...`);
+    // Step 3: SORT NEWEST FIRST AND DISPATCH EXACTLY ONE SINGLE SUMMARY ALERT
+    const sortedJobs = sortJobsByFreshnessFirst(qualifiedJobs);
+    console.log(`\n📬 [Consolidated Dispatcher] Preparing ONE single summary alert (${sortedJobs.length} Qualified Jobs, sorted Newest First)...`);
 
-    if (qualifiedJobs.length > 0) {
+    if (sortedJobs.length > 0) {
       // Dispatches the single combined batch across Email, Telegram, and Push
-      const dispatchResult = await dispatchNotificationBatch(qualifiedJobs);
+      const dispatchResult = await dispatchNotificationBatch(sortedJobs);
       console.log(`🚀 [Dispatch Result] Batch ID: ${dispatchResult.batchId} | Status: ${dispatchResult.overallStatus}`);
     } else {
       console.log(`ℹ️ [No New Jobs] 0 new matching jobs in this cycle. Next scan in ${config.scheduleIntervalMinutes || 55} minutes.`);

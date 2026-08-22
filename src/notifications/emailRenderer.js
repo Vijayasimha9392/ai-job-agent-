@@ -1,9 +1,8 @@
 // =====================================================================
-// Email Alert Renderer - Single Summary Email & Strict Verified Provenance
+// Email Alert Renderer - Strict Freshness-First Single Summary Email
 // =====================================================================
 
-const fs = require("fs");
-const path = require("path");
+const { sortJobsByFreshnessFirst } = require("../pipeline/scoringEngine");
 
 /**
  * Formats ISO date to Asia/Kolkata readable string
@@ -24,14 +23,28 @@ function formatDisplayDate(isoString, timezone = "Asia/Kolkata") {
 }
 
 /**
- * Renders the single summary email for each 55-minute cycle
+ * Formats clean age string (e.g. "8 minutes ago", "1 hour ago", "4 hours ago")
+ */
+function formatAgeString(jobAgeMinutes, jobAgeHours) {
+  if (jobAgeMinutes === null || jobAgeMinutes === undefined || isNaN(jobAgeMinutes)) {
+    return "Publication time not specified";
+  }
+  if (jobAgeMinutes < 1) return "Just now";
+  if (jobAgeMinutes < 60) return `${Math.round(jobAgeMinutes)} minutes ago`;
+  const hrs = Math.round(jobAgeHours || jobAgeMinutes / 60);
+  return hrs === 1 ? "1 hour ago" : `${hrs} hours ago`;
+}
+
+/**
+ * Renders the single summary email for each 55-minute cycle (Sorted Newest First)
  * @param {Array<{job: object, evaluation: object, dispatchMeta: object}>} qualifiedJobs
  * @param {string} timezone
  * @param {string} candidateName
  * @returns {{ subject: string, html: string, text: string }}
  */
 function renderSummaryEmail(qualifiedJobs = [], timezone = "Asia/Kolkata", candidateName = "Vijayasimha") {
-  const count = qualifiedJobs.length;
+  const sortedJobs = sortJobsByFreshnessFirst(qualifiedJobs);
+  const count = sortedJobs.length;
   const firstName = candidateName ? candidateName.split(" ")[0] : "Vijayasimha";
 
   // CASE 1: ZERO NEW JOBS FOUND
@@ -88,54 +101,51 @@ The agent will check again in 55 minutes.`;
     return { subject, html, text };
   }
 
-  // CASE 2: VERIFIED JOBS FOUND
-  const topMatch = Math.max(...qualifiedJobs.map(j => j.evaluation?.matchScore || 0));
-  const hasCritical = qualifiedJobs.some(item => item.dispatchMeta?.priorityLevel === "CRITICAL" || (item.job.jobAgeMinutes !== null && item.job.jobAgeMinutes <= 15));
+  // CASE 2: VERIFIED JOBS FOUND (SORTED NEWEST FIRST)
+  const topMatch = Math.max(...sortedJobs.map(j => j.evaluation?.matchScore || 0));
+  const hasCritical = sortedJobs.some(item => item.dispatchMeta?.priorityLevel === "CRITICAL" || (item.job.jobAgeMinutes !== null && item.job.jobAgeMinutes <= 30));
   const subject = `Job Hunter AI — ${count} New Matching Job${count > 1 ? "s" : ""} (${topMatch}% Top Match)`;
 
-  // Build Plain Text
-  const jobTextItems = qualifiedJobs.map((item, idx) => {
+  // Build Plain Text (Newest to Oldest)
+  const jobTextItems = sortedJobs.map((item, idx) => {
     const { job, evaluation, dispatchMeta } = item;
-    const isCritical = dispatchMeta?.priorityLevel === "CRITICAL" || (job.jobAgeMinutes !== null && job.jobAgeMinutes <= 15);
+    const isCritical = dispatchMeta?.priorityLevel === "CRITICAL" || (job.jobAgeMinutes !== null && job.jobAgeMinutes <= 30);
+    const ageStr = formatAgeString(job.jobAgeMinutes, job.jobAgeHours);
     const pubStr = formatDisplayDate(job.publishedAt, timezone);
     const firstDetectedStr = formatDisplayDate(job.discoveredAt || job.retrievedAt, timezone);
-    const ageStr = job.jobAgeMinutes !== null 
-      ? (job.jobAgeMinutes < 60 ? `${Math.round(job.jobAgeMinutes)} min ago` : `${Math.round(job.jobAgeHours)}h ago`)
-      : "Not specified";
 
-    return `${idx + 1}. ${isCritical ? "[🚨 CRITICAL] " : ""}${job.title} - ${job.company}
-   Source: ${job.source} (${job.sourceType || "Official ATS"})
-   Verified Job ID: ${job.sourceJobId || job.jobReferenceId || job.jobId}
-   Published: ${pubStr}${job.jobAgeMinutes !== null ? ` (${ageStr})` : ""}
-   First Detected: ${firstDetectedStr}
-   Verified: ✓ Verified Active Vacancy URL (HTTP 200)
-   Location: ${job.location} (${job.workMode || "On-site"})
-   Experience: ${evaluation.experienceRequired || "0-2 years"}
-   Match Score: ${evaluation.matchScore}% (${evaluation.matchLevel || "Strong Match"})
-   Matched Skills: ${(evaluation.matchedSkills || []).join(", ") || "Java, Spring Boot, REST APIs"}
-   Why It Matches: ${evaluation.whyMatched || "Direct alignment with candidate profile"}
-   Direct Application: ${job.applicationUrl}`;
-  }).join("\n\n");
+    return `#${idx + 1} — Posted ${ageStr} ${isCritical ? "[🚨 CRITICAL]" : ""}
+${job.title} — ${job.company}
+Match: ${evaluation.matchScore}% (${evaluation.matchLevel || "Strong Match"})
+Source: ${job.source} (${job.sourceType || "Official ATS"})
+Verified Job ID: ${job.sourceJobId || job.jobReferenceId || job.jobId}
+Published: ${pubStr}
+First Detected: ${firstDetectedStr}
+Location: ${job.location} (${job.workMode || "On-site"})
+Experience: ${evaluation.experienceRequired || "0-2 years"}
+Matched Skills: ${(evaluation.matchedSkills || []).join(", ") || "Java, Spring Boot, REST APIs"}
+Why It Matches: ${evaluation.whyMatched || "Direct alignment with candidate profile"}
+Direct Application: ${job.applicationUrl}`;
+  }).join("\n\n--------------------------------------------------\n\n");
 
   const text = `Hi ${firstName},
 
-${count} verified matching job${count > 1 ? "s were" : " was"} discovered in the latest scan.
+🔥 ${count} New Matching Job${count > 1 ? "s" : ""} (Prioritized Newest First):
 
 ${jobTextItems}
 
---------------------------------------------------
-Previously notified jobs are excluded automatically.
-Every listed link is verified as an active, individual vacancy URL.`;
+==================================================
+🛡️ Absolute Freshness Policy: Max Age 30 Hours.
+✅ Previously notified jobs are excluded automatically.
+🔗 Every link is verified as an active, genuine vacancy URL.`;
 
-  // Build HTML Cards
-  const jobHtmlCards = qualifiedJobs.map((item, idx) => {
+  // Build HTML Cards (Newest to Oldest)
+  const jobHtmlCards = sortedJobs.map((item, idx) => {
     const { job, evaluation, dispatchMeta } = item;
-    const isCritical = dispatchMeta?.priorityLevel === "CRITICAL" || (job.jobAgeMinutes !== null && job.jobAgeMinutes <= 15);
+    const isCritical = dispatchMeta?.priorityLevel === "CRITICAL" || (job.jobAgeMinutes !== null && job.jobAgeMinutes <= 30);
+    const ageStr = formatAgeString(job.jobAgeMinutes, job.jobAgeHours);
     const pubStr = formatDisplayDate(job.publishedAt, timezone);
     const firstDetectedStr = formatDisplayDate(job.discoveredAt || job.retrievedAt, timezone);
-    const ageStr = job.jobAgeMinutes !== null 
-      ? (job.jobAgeMinutes < 60 ? `${Math.round(job.jobAgeMinutes)} min ago` : `${Math.round(job.jobAgeHours)}h ago`)
-      : null;
 
     const matchedList = (evaluation.matchedSkills || []).slice(0, 6);
     const matchedChips = matchedList.map(s => `<span style="display:inline-block;background:#eff6ff;color:#1d4ed8;padding:3px 8px;border-radius:4px;font-size:11px;font-weight:600;margin:2px;">✓ ${s}</span>`).join(" ");
@@ -144,8 +154,8 @@ Every listed link is verified as an active, individual vacancy URL.`;
     <div style="background:#ffffff;border:1px solid ${isCritical ? '#f87171' : '#e2e8f0'};border-left:4px solid ${isCritical ? '#dc2626' : '#2563eb'};border-radius:8px;padding:18px;margin-bottom:16px;box-shadow:0 1px 3px rgba(0,0,0,0.05);">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">
         <div>
-          <span style="background:${isCritical ? '#dc2626' : '#1e293b'};color:#ffffff;font-size:11px;font-weight:700;padding:2px 7px;border-radius:4px;margin-right:6px;">#${idx + 1} ${isCritical ? "🚨 CRITICAL" : ""}</span>
-          <span style="font-size:16px;font-weight:700;color:#0f172a;">${job.title}</span>
+          <span style="background:${isCritical ? '#dc2626' : '#1e293b'};color:#ffffff;font-size:11px;font-weight:700;padding:3px 8px;border-radius:4px;margin-right:6px;">#${idx + 1} — Posted ${ageStr}</span>
+          <div style="font-size:16px;font-weight:700;color:#0f172a;margin-top:6px;">${job.title}</div>
           <div style="font-size:14px;font-weight:600;color:#2563eb;margin-top:2px;">${job.company} • <span style="color:#64748b;font-size:12px;">via ${job.source} (${job.sourceType || 'Official ATS'})</span></div>
         </div>
         <div style="text-align:right;">
@@ -159,7 +169,7 @@ Every listed link is verified as an active, individual vacancy URL.`;
         📍 <strong>Location:</strong> ${job.location} (${job.workMode || "On-site"})<br>
         💼 <strong>Experience:</strong> ${evaluation.experienceRequired || "0-2 years"}<br>
         🆔 <strong>Verified Job ID:</strong> <code>${job.sourceJobId || job.jobReferenceId || job.jobId}</code><br>
-        🕒 <strong>Published:</strong> ${pubStr}${ageStr ? ` (<strong>${ageStr}</strong>)` : ''}<br>
+        🕒 <strong>Published:</strong> ${pubStr} (<strong>${ageStr}</strong>)<br>
         👁️ <strong>First Detected:</strong> ${firstDetectedStr}<br>
         🛡️ <strong>Verification:</strong> <span style="color:#16a34a;font-weight:600;">✓ Verified Active Vacancy URL (HTTP 200)</span>
       </div>
@@ -199,16 +209,17 @@ Every listed link is verified as an active, individual vacancy URL.`;
 <body>
   <div class="wrapper">
     <div class="header">
-      <h1>${hasCritical ? "🚨 Job Hunter AI • Critical Alert" : "🔥 Job Hunter AI • Live Alert"}</h1>
-      <p>Near Real-Time Multi-Channel Intelligence for ${candidateName}</p>
+      <h1>${hasCritical ? "🚨 Job Hunter AI • Critical Fresh Alert" : "🔥 Job Hunter AI • Fresh Job Alert"}</h1>
+      <p>Early Application Intelligence for ${candidateName} (Sorted Newest First)</p>
     </div>
     <div class="content">
       <div class="banner">
-        🎉 ${count} verified matching job${count > 1 ? "s were" : " was"} discovered!
+        🎉 ${count} verified matching job${count > 1 ? "s were" : " was"} discovered (Prioritized by Freshness)!
       </div>
       ${jobHtmlCards}
     </div>
     <div class="footer">
+      ⏰ Absolute Freshness Policy: Maximum Age 30 Hours.<br>
       ✅ Previously notified jobs are automatically excluded.<br>
       🛡️ 100% Verified Active Vacancy URLs with HTTP status checks.
     </div>
@@ -221,5 +232,6 @@ Every listed link is verified as an active, individual vacancy URL.`;
 
 module.exports = {
   renderSummaryEmail,
-  formatDisplayDate
+  formatDisplayDate,
+  formatAgeString
 };

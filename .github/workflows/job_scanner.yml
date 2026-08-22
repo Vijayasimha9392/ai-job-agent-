@@ -44,7 +44,7 @@ jobs:
           ADZUNA_APP_KEY: ${{ secrets.ADZUNA_APP_KEY }}
           RAPIDAPI_KEY: ${{ secrets.RAPIDAPI_KEY }}
           MIN_MATCH_SCORE: 65
-          MAX_JOB_AGE_HOURS: 40
+          MAX_JOB_AGE_HOURS: 30
           SCHEDULE_INTERVAL_MINUTES: 55
           ENABLE_EMAIL_NOTIFICATIONS: true
           ENABLE_TELEGRAM_NOTIFICATIONS: true
