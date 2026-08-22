@@ -15,7 +15,7 @@ let pool = null;
 let isPostgresConnected = false;
 
 // Fallback in-memory/local JSON store if Postgres/Supabase is offline
-const localStorePath = path.resolve(__dirname, "../../scratch/local_db.json");
+const localStorePath = path.resolve(__dirname, "../../data/job_state.json");
 let localDb = {
   pipeline_state: {
     last_run_state: { last_successful_run: null, total_scans: 0, total_matches: 0, total_emails: 0, total_notifications: 0 }

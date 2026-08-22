@@ -8,9 +8,13 @@ on:
 jobs:
   scan-and-alert:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -45,3 +49,12 @@ jobs:
           ENABLE_EMAIL_NOTIFICATIONS: true
           ENABLE_TELEGRAM_NOTIFICATIONS: true
         run: node tests/test_live_single_run.js
+
+      - name: Persist Notified State to Repository
+        if: always()
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/job_state.json
+          git commit -m "chore(db): persist notified jobs state [skip ci]" || echo "No new jobs to persist"
+          git push origin main || echo "No changes to push"

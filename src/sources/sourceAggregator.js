@@ -22,16 +22,18 @@ const { updateSourceState } = require("../db/database");
  * - SmartRecruiters career pages
  * - Ashby career pages
  */
-async function fetchFastTierSources(queryVariations = ["Java Developer India", "Spring Boot React Developer"]) {
+async function fetchFastTierSources(queryVariations = ["Java Developer", "Spring Boot", "Java Full Stack", "Java Fresher", "Java React"]) {
   console.log("⚡ [Aggregator] Ingesting FAST Tier sources (2m cadence)...");
   const startTime = Date.now();
+
+  const adzunaQueries = queryVariations.slice(0, 5);
 
   const promises = [
     fetchAllGreenhouseJobs().then(jobs => { updateSourceState("Greenhouse", "FAST", jobs.length); return jobs; }),
     fetchAllLeverJobs().then(jobs => { updateSourceState("Lever", "FAST", jobs.length); return jobs; }),
     fetchAllAshbyJobs().then(jobs => { updateSourceState("Ashby", "FAST", jobs.length); return jobs; }),
     fetchAllSmartRecruitersJobs().then(jobs => { updateSourceState("SmartRecruiters", "FAST", jobs.length); return jobs; }),
-    ...queryVariations.slice(0, 3).map(q => fetchAdzunaJobs(q).then(jobs => { updateSourceState("Adzuna", "FAST", jobs.length); return jobs; })),
+    ...adzunaQueries.map(q => fetchAdzunaJobs(q).then(jobs => { updateSourceState("Adzuna", "FAST", jobs.length); return jobs; })),
     ...queryVariations.slice(0, 2).map(q => fetchJSearchJobs(q).then(jobs => { updateSourceState("JSearch", "FAST", jobs.length); return jobs; }))
   ];
 

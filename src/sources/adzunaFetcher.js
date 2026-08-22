@@ -15,7 +15,7 @@ async function fetchAdzunaJobs(what = "Java Developer") {
     url.searchParams.set("app_key", config.adzunaAppKey.trim());
     url.searchParams.set("what", what);
     url.searchParams.set("results_per_page", "25");
-    url.searchParams.set("max_days_old", "3");
+    url.searchParams.set("max_days_old", "7");
     url.searchParams.set("sort_by", "date");
 
     const response = await fetch(url.toString(), {

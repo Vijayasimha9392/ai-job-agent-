@@ -1,8 +1,6 @@
 node_modules/
 .env
 logs/
-scratch/local_db.json
-scratch/*.json
 .pm2/
 *.log
 .DS_Store
