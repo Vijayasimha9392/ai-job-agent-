@@ -22,9 +22,10 @@ async function fetchLeverJobsForBoard(company, board) {
 
     return postings
       .filter((p) => {
+        if (!p.id) return false;
         const loc = (p.categories?.location || "").toLowerCase();
         const isIndia = loc.includes("india") || loc.includes("bangalore") || loc.includes("bengaluru") || 
-                        loc.includes("hyderabad") || loc.includes("pune") || loc.includes("remote") ||
+                        loc.includes("hyderabad") || loc.includes("pune") ||
                         loc.includes("chennai") || loc.includes("delhi") || loc.includes("noida") || loc.includes("gurgaon");
         const title = (p.text || "").toLowerCase();
         const isTech = title.includes("software") || title.includes("engineer") || title.includes("developer") || 
@@ -32,7 +33,7 @@ async function fetchLeverJobsForBoard(company, board) {
         return isIndia && isTech;
       })
       .map((p) => {
-        const directUrl = p.applyUrl || p.hostedUrl || `https://jobs.lever.co/${board}/${p.id}`;
+        const directUrl = p.hostedUrl || `https://jobs.lever.co/${board}/${p.id}`;
         return normalizeJob({
           jobId: `lever_${board}_${p.id}`,
           source: "Lever",
@@ -47,13 +48,14 @@ async function fetchLeverJobsForBoard(company, board) {
           minimumExperience: null,
           maximumExperience: null,
           education: "B.Tech / B.E. in Computer Science",
-          publishedAt: p.createdAt ? new Date(p.createdAt).toISOString() : new Date().toISOString(),
+          publishedAt: p.createdAt ? new Date(p.createdAt).toISOString() : null,
           applicationUrl: directUrl,
           companyCareersUrl: `https://jobs.lever.co/${board}`,
           salary: "Not Disclosed",
           jobReferenceId: String(p.id)
         }, "Lever");
-      });
+      })
+      .filter(Boolean);
   } catch (err) {
     return [];
   }

@@ -24,9 +24,10 @@ async function fetchGreenhouseJobsForBoard(company, board) {
 
     return jobs
       .filter((j) => {
+        if (!j.id) return false;
         const loc = (j.location?.name || "").toLowerCase();
         const isIndia = loc.includes("india") || loc.includes("bangalore") || loc.includes("bengaluru") || 
-                        loc.includes("hyderabad") || loc.includes("pune") || loc.includes("remote") ||
+                        loc.includes("hyderabad") || loc.includes("pune") ||
                         loc.includes("chennai") || loc.includes("delhi") || loc.includes("noida") || loc.includes("gurgaon");
         const title = (j.title || "").toLowerCase();
         const isTech = title.includes("software") || title.includes("developer") || title.includes("engineer") || 
@@ -34,7 +35,6 @@ async function fetchGreenhouseJobsForBoard(company, board) {
         return isIndia && isTech;
       })
       .map((j) => {
-        // Construct canonical direct apply link
         const directUrl = j.absolute_url || `https://job-boards.greenhouse.io/${board}/jobs/${j.id}`;
         return normalizeJob({
           jobId: `gh_${board}_${j.id}`,
@@ -50,13 +50,14 @@ async function fetchGreenhouseJobsForBoard(company, board) {
           minimumExperience: null,
           maximumExperience: null,
           education: "B.Tech / B.E. in CSE / IT",
-          publishedAt: j.updated_at || new Date().toISOString(),
+          publishedAt: j.updated_at || null,
           applicationUrl: directUrl,
           companyCareersUrl: `https://job-boards.greenhouse.io/${board}`,
           salary: "Not Disclosed",
           jobReferenceId: String(j.id)
         }, "Greenhouse");
-      });
+      })
+      .filter(Boolean);
   } catch (err) {
     return [];
   }

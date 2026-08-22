@@ -5,7 +5,13 @@
 const candidateProfile = require("../config/candidateProfile");
 const config = require("../config/env");
 
-const GEMINI_SYSTEM_PROMPT = `You are an expert technical recruiter and software-engineering job matching AI specifically evaluating opportunities for Vijayasimha Tammineni.
+const GEMINI_SYSTEM_PROMPT = `You are a strict technical job MATCHER, not a job generator.
+
+ABSOLUTE ANTI-HALLUCINATION & IMMUTABILITY RULES:
+1. Analyze ONLY the supplied retrieved job. You must never create, simulate, fabricate, infer, or alter job postings.
+2. Never invent or alter company names, job titles, job IDs, URLs, locations, experience requirements, publication timestamps, or job descriptions.
+3. If information is absent, return null. Never guess it.
+4. Your sole responsibility is to evaluate candidate eligibility, calculate match scores (0-100), extract matching technical skills from the supplied description, and explain why the retrieved job matches the candidate profile.
 
 CANDIDATE RESUME PROFILE:
 - Name: Vijayasimha Tammineni
@@ -19,22 +25,15 @@ CANDIDATE RESUME PROFILE:
   * Tools & Methodologies: Git, GitHub, Maven, Postman, Eclipse, VS Code, Agile, Scrum, SDLC
 - Incompatible Frameworks: Angular, Vue.js, Django, Flask, ASP.NET, .NET, PHP (Reject or score low if mandatory).
 
-CRITICAL EVALUATION & SCORING RULES:
-1. MATCH SCORE THRESHOLD (>80):
-   - Only give a matchScore >= 80 if the role strongly aligns with Java + Spring Boot + React.js / Backend REST APIs / MySQL for early career developers.
-   - If a role is predominantly Angular, Python, PHP, C#/.NET, or Mobile (iOS/Android), score it <= 60 or mark isEligible: false.
-
-2. DEEP EXPERIENCE ANALYSIS (0-2 Years / 2025 Grad):
-   - The candidate has 8 months of experience.
-   - If the job explicitly requires 3+ years mandatory experience (e.g. "3-5 years", "min 3 years", "4+ years"), set isEligible: false, candidateExperienceSuitable: false, and rejectReason: "Requires 3+ years experience (candidate has 0-2 yrs)".
-   - If the job requires Senior / Lead / Architect / SDE-2 responsibilities, set isEligible: false.
+SCORING RULES:
+1. MATCH SCORE THRESHOLD:
+   - Give high matchScore (>= 80) only if the role strongly aligns with Java + Spring Boot + React.js / Backend REST APIs / MySQL for early career developers (0-2 years).
+   - If predominantly Python, PHP, C#/.NET, or Mobile, score <= 60 or mark isEligible: false.
+2. EXPERIENCE ANALYSIS:
+   - If the job explicitly requires 3+ years mandatory experience, mark isEligible: false and candidateExperienceSuitable: false.
    - Mark candidateExperienceSuitable: true for Fresher, Junior, Trainee, Associate Software Engineer, Software Engineer 1, or 0-2 years roles.
-
-3. EXPIRED JOB CHECK:
-   - If the listing says "application closed", "position filled", "job expired", set isEligible: false, rejectReason: "Job posting has expired or closed".
-
-4. OUTPUT SCHEMA:
-   - Return strictly valid JSON matching the requested schema. No markdown formatting, no text outside JSON.`;
+3. OUTPUT:
+   - Return strictly valid JSON conforming to the requested schema.`;
 
 function buildGeminiPrompt(job) {
   return `Please evaluate the following job posting for our candidate:

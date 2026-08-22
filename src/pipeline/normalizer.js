@@ -86,6 +86,21 @@ function normalizeJob(rawJob, sourceName = "Custom") {
   const salary = cleanText(rawJob.salary || rawJob.job_salary || (rawJob.salary_min ? `₹${rawJob.salary_min} - ₹${rawJob.salary_max}` : "") || "Not Disclosed");
   const jobReferenceId = String(rawJob.jobReferenceId || rawJob.job_id || rawJob.id || rawJob.slug || "").trim();
 
+  // Block synthetic or test data in production execution
+  const rawId = String(rawJob.jobId || jobReferenceId || "").toLowerCase();
+  if (
+    rawId.startsWith("test_") ||
+    rawId.startsWith("mock_") ||
+    rawId.startsWith("demo_") ||
+    rawId.startsWith("fixture_") ||
+    rawId.startsWith("synthetic_")
+  ) {
+    if (process.env.ALLOW_TEST_JOBS !== "true") {
+      console.warn(`🛑 [TEST_DATA_BLOCKED] Blocked synthetic/mock job ID: "${rawId}"`);
+      return null;
+    }
+  }
+
   // Determine work mode
   let workMode = "On-site";
   const fullText = `${title} ${description} ${location}`.toLowerCase();
@@ -95,7 +110,7 @@ function normalizeJob(rawJob, sourceName = "Custom") {
     workMode = "Hybrid";
   }
 
-  // Parse Published Date
+  // Parse Published Date (Do not invent timestamps if source does not provide)
   let publishedAt = null;
   let freshnessVerified = false;
   const rawDate = rawJob.publishedAt || rawJob.job_posted_at_datetime_utc || rawJob.created_at || rawJob.publication_date || rawJob.posted_date || rawJob.date;
@@ -118,14 +133,19 @@ function normalizeJob(rawJob, sourceName = "Custom") {
   const extractedSkills = extractCommonSkills(description);
   const skills = Array.from(new Set([...rawSkills, ...extractedSkills]));
 
-  // Generate a deterministic Job ID if none provided
+  // Generate deterministic Job ID
   const hashSeed = `${company}|${title}|${jobReferenceId || applicationUrl}`;
   const jobId = rawJob.jobId || "job_" + crypto.createHash("sha256").update(hashSeed).digest("hex").substring(0, 16);
+
+  // Raw source hash for provenance
+  const rawSourceHash = crypto.createHash("sha256").update(JSON.stringify(rawJob)).digest("hex");
 
   return {
     jobId,
     source: sourceName,
     sourceType: rawJob.sourceType || (sourceName.includes("Greenhouse") || sourceName.includes("Lever") || sourceName.includes("Ashby") || sourceName.includes("Workday") || sourceName.includes("SmartRecruiters") ? "Official ATS" : (sourceName.includes("Adzuna") || sourceName.includes("JSearch") ? "Major Job API" : "Career Feed")),
+    sourceJobId: jobReferenceId || "",
+    sourceUrl: companyCareersUrl || "",
     company,
     title,
     location,
@@ -138,13 +158,19 @@ function normalizeJob(rawJob, sourceName = "Custom") {
     education: rawJob.education || "B.Tech / B.E. / MCA / Any Graduate",
     publishedAt,
     discoveredAt,
+    retrievedAt: discoveredAt,
     jobAgeMinutes: null, // Will be computed programmatically by FreshnessEngine
     jobAgeHours: null,   // Will be computed programmatically by FreshnessEngine
     freshnessVerified,
     applicationUrl,
     companyCareersUrl,
     salary,
-    jobReferenceId
+    jobReferenceId,
+    rawSourceHash,
+    sourceVerified: true,
+    applicationUrlVerified: false,
+    titleVerified: Boolean(title && title.length > 2),
+    companyVerified: Boolean(company && company.length > 1 && company !== "Confidential")
   };
 }
 

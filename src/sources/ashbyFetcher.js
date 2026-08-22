@@ -23,6 +23,7 @@ async function fetchAshbyJobsForBoard(company, board) {
 
     return jobs
       .filter((j) => {
+        if (!j.id) return false;
         const loc = (j.location || j.secondaryLocations?.map(l => l.location).join(" ") || "").toLowerCase();
         const isIndia = loc.includes("india") || loc.includes("bangalore") || loc.includes("bengaluru") || 
                         loc.includes("hyderabad") || loc.includes("pune") || loc.includes("chennai") ||
@@ -47,13 +48,14 @@ async function fetchAshbyJobsForBoard(company, board) {
           minimumExperience: null,
           maximumExperience: null,
           education: "B.Tech CSE",
-          publishedAt: j.publishedAt || new Date().toISOString(),
+          publishedAt: j.publishedAt || null,
           applicationUrl: j.jobUrl || `https://jobs.ashbyhq.com/${board}/${j.id}`,
           companyCareersUrl: `https://jobs.ashbyhq.com/${board}`,
           salary: "Not Disclosed",
           jobReferenceId: String(j.id)
         }, "Ashby");
-      });
+      })
+      .filter(Boolean);
   } catch (err) {
     return [];
   }

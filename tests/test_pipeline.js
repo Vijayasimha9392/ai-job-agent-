@@ -2,6 +2,7 @@
 // Comprehensive Unit & Integration Test Suite for Near-Real-Time Job Hunter AI
 // =====================================================================
 
+process.env.ALLOW_TEST_JOBS = "true";
 const assert = require("assert");
 const { normalizeJob, extractExperience, extractCommonSkills } = require("../src/pipeline/normalizer");
 const { evaluateJobFreshness, calculateJobAgeMinutes, calculateJobAgeHours, getFreshnessScore } = require("../src/pipeline/freshnessEngine");

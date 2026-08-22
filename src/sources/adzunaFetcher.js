@@ -3,6 +3,7 @@
 // =====================================================================
 
 const config = require("../config/env");
+const { normalizeJob } = require("../pipeline/normalizer");
 
 async function fetchAdzunaJobs(what = "Java Developer") {
   if (!config.adzunaAppId || !config.adzunaAppKey) {
@@ -26,25 +27,29 @@ async function fetchAdzunaJobs(what = "Java Developer") {
     const json = await response.json();
     const results = json?.results || [];
 
-    return results.map((item) => ({
-      jobId: `adzuna_${item.id}`,
-      source: "Adzuna",
-      company: item.company?.display_name || "Confidential",
-      title: item.title,
-      location: item.location?.display_name || "India",
-      workMode: "On-site",
-      employmentType: item.contract_type || "Full-time",
-      description: item.description || "",
-      skills: (item.category?.tag ? [item.category.tag] : []),
-      minimumExperience: null,
-      maximumExperience: null,
-      education: "Degree",
-      publishedAt: item.created ? new Date(item.created).toISOString() : new Date().toISOString(),
-      applicationUrl: item.redirect_url,
-      companyCareersUrl: "",
-      salary: item.salary_min ? `₹${item.salary_min} - ₹${item.salary_max}` : "Not Disclosed",
-      jobReferenceId: String(item.id)
-    }));
+    return results
+      .filter(item => item.id && item.redirect_url)
+      .map((item) => normalizeJob({
+        jobId: `adzuna_${item.id}`,
+        source: "Adzuna",
+        sourceType: "Major Job API",
+        company: item.company?.display_name || "Confidential",
+        title: item.title,
+        location: item.location?.display_name || "India",
+        workMode: "On-site",
+        employmentType: item.contract_type || "Full-time",
+        description: item.description || "",
+        skills: (item.category?.tag ? [item.category.tag] : []),
+        minimumExperience: null,
+        maximumExperience: null,
+        education: "Degree",
+        publishedAt: item.created ? new Date(item.created).toISOString() : null,
+        applicationUrl: item.redirect_url,
+        companyCareersUrl: "",
+        salary: item.salary_min ? `₹${item.salary_min} - ₹${item.salary_max}` : "Not Disclosed",
+        jobReferenceId: String(item.id)
+      }, "Adzuna"))
+      .filter(Boolean);
   } catch (err) {
     console.warn(`[Adzuna] Fetch warning for "${what}": ${err.message}`);
     return [];

@@ -21,6 +21,7 @@ async function fetchSmartRecruitersJobs(company, identifier) {
 
     return postings
       .filter(p => {
+        if (!p.id) return false;
         const title = (p.name || "").toLowerCase();
         return title.includes("software") || title.includes("engineer") || title.includes("developer") || 
                title.includes("java") || title.includes("backend");
@@ -40,13 +41,14 @@ async function fetchSmartRecruitersJobs(company, identifier) {
           minimumExperience: null,
           maximumExperience: null,
           education: "Bachelor's Degree in CS/IT",
-          publishedAt: p.releasedDate || new Date().toISOString(),
+          publishedAt: p.releasedDate || null,
           applicationUrl: `https://jobs.smartrecruiters.com/${identifier}/${p.id}`,
           companyCareersUrl: `https://careers.smartrecruiters.com/${identifier}`,
           salary: "Not Disclosed",
           jobReferenceId: String(p.id)
         }, "SmartRecruiters");
-      });
+      })
+      .filter(Boolean);
   } catch (err) {
     return [];
   }
