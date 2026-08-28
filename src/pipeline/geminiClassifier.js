@@ -109,7 +109,7 @@ async function classifyJobWithGemini(job, retryCount = 2) {
   };
 
   let lastError = null;
-  const delays = [8000, 20000, 40000];
+  const delays = [2000, 4000];
 
   for (let attempt = 0; attempt < retryCount; attempt++) {
     try {
@@ -117,7 +117,7 @@ async function classifyJobWithGemini(job, retryCount = 2) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(requestPayload),
-        signal: AbortSignal.timeout(25000)
+        signal: AbortSignal.timeout(12000)
       });
 
       if (response.status === 429) {

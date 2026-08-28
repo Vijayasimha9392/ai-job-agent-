@@ -158,19 +158,13 @@ const candidateProfile = {
     "css": 3
   },
   searchQueries: [
-    "Java Full Stack Developer fresher India",
-    "Java React Developer 0-2 years India",
-    "Spring Boot React Developer India",
-    "Associate Software Engineer Java India",
-    "Java Developer fresher Hyderabad",
-    "Java Backend Developer junior India",
-    "Junior Java Full Stack Developer Bangalore",
-    "Software Engineer Java React 0-2 years",
-    "Graduate Software Engineer Java India",
-    "Trainee Software Engineer Java India",
-    "Java Spring Boot Developer Pune",
-    "Associate Software Developer Java Chennai",
-    "Java Full Stack Developer Remote India"
+    "Java Developer",
+    "Spring Boot",
+    "Java Full Stack",
+    "Java Fresher",
+    "Java React",
+    "Associate Software Engineer",
+    "Java Backend Developer"
   ]
 };
 

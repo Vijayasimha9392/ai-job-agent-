@@ -6,6 +6,7 @@ const { normalizeJob } = require("../pipeline/normalizer");
 
 const GREENHOUSE_COMPANIES = [
   { company: "Razorpay", board: "razorpaysoftwareprivatelimited" },
+  { company: "InMobi", board: "inmobi" },
   { company: "Stripe", board: "stripe" },
   { company: "Postman", board: "postman" },
   { company: "PhonePe", board: "phonepe" },

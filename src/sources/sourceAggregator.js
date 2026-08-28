@@ -9,9 +9,17 @@ const { fetchAllSmartRecruitersJobs } = require("./smartRecruitersFetcher");
 const { fetchAllWorkdayJobs } = require("./workdayFetcher");
 const { fetchAdzunaJobs } = require("./adzunaFetcher");
 const { fetchJSearchJobs } = require("./jsearchFetcher");
-const { fetchArbeitnowJobs } = require("./arbeitnowFetcher");
-const { fetchRemotiveJobs } = require("./remotiveFetcher");
 const { updateSourceState } = require("../db/database");
+
+const HIGH_YIELD_QUERIES = [
+  "Java Developer",
+  "Spring Boot",
+  "Java Full Stack",
+  "Java Fresher",
+  "Java React",
+  "Associate Software Engineer",
+  "Java Backend Developer"
+];
 
 /**
  * Executes Fast Tier Sources (Poll interval: 2 minutes)
@@ -22,11 +30,12 @@ const { updateSourceState } = require("../db/database");
  * - SmartRecruiters career pages
  * - Ashby career pages
  */
-async function fetchFastTierSources(queryVariations = ["Java Developer", "Spring Boot", "Java Full Stack", "Java Fresher", "Java React"]) {
+async function fetchFastTierSources(queryVariations = []) {
   console.log("⚡ [Aggregator] Ingesting FAST Tier sources (2m cadence)...");
   const startTime = Date.now();
 
-  const adzunaQueries = queryVariations.slice(0, 5);
+  const queries = (queryVariations && queryVariations.length > 0) ? queryVariations : HIGH_YIELD_QUERIES;
+  const adzunaQueries = queries.slice(0, 6);
 
   const promises = [
     fetchAllGreenhouseJobs().then(jobs => { updateSourceState("Greenhouse", "FAST", jobs.length); return jobs; }),
@@ -34,7 +43,7 @@ async function fetchFastTierSources(queryVariations = ["Java Developer", "Spring
     fetchAllAshbyJobs().then(jobs => { updateSourceState("Ashby", "FAST", jobs.length); return jobs; }),
     fetchAllSmartRecruitersJobs().then(jobs => { updateSourceState("SmartRecruiters", "FAST", jobs.length); return jobs; }),
     ...adzunaQueries.map(q => fetchAdzunaJobs(q).then(jobs => { updateSourceState("Adzuna", "FAST", jobs.length); return jobs; })),
-    ...queryVariations.slice(0, 2).map(q => fetchJSearchJobs(q).then(jobs => { updateSourceState("JSearch", "FAST", jobs.length); return jobs; }))
+    ...queries.slice(0, 2).map(q => fetchJSearchJobs(q).then(jobs => { updateSourceState("JSearch", "FAST", jobs.length); return jobs; }))
   ];
 
   const results = await Promise.allSettled(promises);
@@ -55,8 +64,6 @@ async function fetchFastTierSources(queryVariations = ["Java Developer", "Spring
 /**
  * Executes Normal Tier Sources (Poll interval: 5 minutes)
  * - Workday public career pages
- * - SuccessFactors public career pages
- * - Arbeitnow & Remotive feeds
  */
 async function fetchNormalTierSources() {
   console.log("🌐 [Aggregator] Ingesting NORMAL Tier sources (India career feeds)...");
@@ -86,8 +93,9 @@ async function fetchNormalTierSources() {
  */
 async function fetchAllSources(queryVariations = []) {
   console.log("🌐 [Aggregator] Initiating full multi-source ingestion...");
+  const queriesToUse = (queryVariations && queryVariations.length > 0) ? queryVariations : HIGH_YIELD_QUERIES;
   const [fastJobs, normalJobs] = await Promise.all([
-    fetchFastTierSources(queryVariations),
+    fetchFastTierSources(queriesToUse),
     fetchNormalTierSources()
   ]);
 
@@ -97,5 +105,6 @@ async function fetchAllSources(queryVariations = []) {
 module.exports = {
   fetchFastTierSources,
   fetchNormalTierSources,
-  fetchAllSources
+  fetchAllSources,
+  HIGH_YIELD_QUERIES
 };
