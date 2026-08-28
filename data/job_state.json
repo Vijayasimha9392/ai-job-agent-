@@ -4703,7 +4703,7 @@
       "title": "Java Dev",
       "applicationUrl": "https://test.com",
       "id": "job_test_1",
-      "job_fingerprint": "test_fp_1787905233470",
+      "job_fingerprint": "test_fp_1787905965111",
       "status": "NOTIFIED"
     },
     "adzuna_5859430826": {
@@ -6846,6 +6846,15 @@
       "discovered_at": "2026-08-28T08:29:40.343Z",
       "first_seen_at": "2026-08-28T08:29:40.344Z",
       "status": "REJECTED_RULE_FILTER"
+    },
+    "test_fp_1787905965111": {
+      "job_fingerprint": "test_fp_1787905965111",
+      "job_id": "job_test_1",
+      "company": "Test Co",
+      "title": "Java Dev",
+      "application_url": "https://test.com",
+      "first_seen_at": "2026-08-28T08:32:45.111Z",
+      "status": "NOTIFIED"
     }
   },
   "job_evaluations": [
@@ -8816,6 +8825,17 @@
       "created_at": "2026-08-28T08:20:33.496Z",
       "updated_at": "2026-08-28T08:20:33.500Z",
       "last_used_at": "2026-08-28T08:20:33.496Z"
+    },
+    "test_fcm_token_1787905965136": {
+      "id": "dev_dGVzdF9mY21fdG9rZW5fMTc4",
+      "user_id": "test_candidate",
+      "device_name": "Chrome on macOS",
+      "platform": "web",
+      "fcm_token": "test_fcm_token_1787905965136",
+      "is_active": false,
+      "created_at": "2026-08-28T08:32:45.136Z",
+      "updated_at": "2026-08-28T08:32:45.141Z",
+      "last_used_at": "2026-08-28T08:32:45.136Z"
     }
   },
   "source_state": {

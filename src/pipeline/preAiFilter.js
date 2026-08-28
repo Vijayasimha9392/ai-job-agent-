@@ -199,30 +199,39 @@ function applyPreAiFilter(job) {
     };
   }
 
-  // Regex 7A: "minimum 3+ years", "at least 3 years", "requires 4-6 years", "3 to 5 years", "2+ years" (if 3+)
-  const expMatch = fullText.match(/(?:minimum|min|requires?|mandatory|at least|with|\b)\s*([3-9]|\d{2})\+?\s*(?:-|to|\+)?\s*\d*\s*(?:years?|yrs?)(?:\s+of\s+experience|\s+experience)?/i);
+  // Regex 7A: Decimal or integer years: "8.00-12.00 Years", "3+ years", "3.5 yrs", "experience: 8.00 - 12.00"
+  const highExpRegex = /(?:experience|exp|requires?|mandatory|at least|with|\b)\s*:?\s*([3-9]|\d{2})(?:\.\d+)?\s*(?:\+|plus)?\s*(?:-|to|\+)?\s*\d*(?:\.\d+)?\s*(?:years?|yrs?)/i;
+  const expMatch = fullText.match(highExpRegex);
   if (expMatch) {
-    const minYears = parseInt(expMatch[1], 10);
-    if (minYears >= 3) {
+    const num = parseFloat(expMatch[1]);
+    if (num >= 3.0) {
       return {
         isPass: false,
-        reason: `Requires ${minYears}+ years experience (matches "${expMatch[0].trim()}"), exceeding candidate 0-2 yrs profile`,
+        reason: `Requires ${num}+ years experience (matches "${expMatch[0].trim()}"), exceeding candidate 0-2 yrs profile`,
         filterCategory: "EXPERIENCE_EXCEEDED"
       };
     }
   }
 
-  // Regex 7B: Explicit range "3-5 years", "3 - 7 yrs", "4-6 yrs"
-  const rangeMatch = fullText.match(/\b([3-9])\s*(?:-|to)\s*(\d+)\s*(?:years?|yrs?)/i);
+  // Regex 7B: Decimal range like "2.5 - 5 years" or "2.5+ years"
+  const decimalHighRegex = /\b([2-9]\.[1-9]|\d{2}\.\d+)\s*(?:\+|plus)?\s*(?:-|to|\+)?\s*\d*(?:\.\d+)?\s*(?:years?|yrs?)/i;
+  const decMatch = fullText.match(decimalHighRegex);
+  if (decMatch) {
+    return {
+      isPass: false,
+      reason: `Experience requirement ${decMatch[0]} exceeds early-career (0-2 years) threshold`,
+      filterCategory: "EXPERIENCE_EXCEEDED"
+    };
+  }
+
+  // Regex 7C: Explicit range starting at 3+: "3-5 years", "4 - 7 yrs", "8.00-12.00 Years"
+  const rangeMatch = fullText.match(/\b([3-9]|\d{2})(?:\.\d+)?\s*(?:-|to)\s*\d+(?:\.\d+)?\s*(?:years?|yrs?)/i);
   if (rangeMatch) {
-    const startRange = parseInt(rangeMatch[1], 10);
-    if (startRange >= 3) {
-      return {
-        isPass: false,
-        reason: `Experience range ${rangeMatch[0]} exceeds early-career (0-2 years) threshold`,
-        filterCategory: "EXPERIENCE_EXCEEDED"
-      };
-    }
+    return {
+      isPass: false,
+      reason: `Experience range ${rangeMatch[0]} exceeds early-career (0-2 years) threshold`,
+      filterCategory: "EXPERIENCE_EXCEEDED"
+    };
   }
 
   // 8. Must have a valid application URL

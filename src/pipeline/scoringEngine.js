@@ -84,7 +84,7 @@ function determineDispatchPriority(job, evaluation, minNotificationThreshold = 6
     };
   }
 
-  // 2. Ineligible or low match (<55) roles are rejected immediately
+  // 2. Ineligible, fallback unconfirmed, or low match (<60) roles are rejected immediately
   if (!isEligible || matchScore < 55) {
     return {
       shouldNotify: false,
@@ -96,7 +96,20 @@ function determineDispatchPriority(job, evaluation, minNotificationThreshold = 6
     };
   }
 
-  // 3. Dynamic Qualification Thresholds based on Age Tiers
+  // 3. Fallback safeguard: If evaluation was generated via heuristic fallback without AI confirmation,
+  // do not dispatch unless experience is confirmed as early-career (0-2y)
+  if (evaluation.isFallback && !isExperienceConfirmed) {
+    return {
+      shouldNotify: false,
+      shouldEmail: false,
+      priorityLevel: "STORE_ONLY",
+      badgeText: "Unconfirmed Experience (Fallback)",
+      badgeColor: "#64748b",
+      reason: "Experience requirement was not confirmed by AI or source description."
+    };
+  }
+
+  // 4. Dynamic Qualification Thresholds based on Age Tiers
   let dynamicMinScore = minNotificationThreshold;
   if (jobAgeHours !== null) {
     if (jobAgeHours <= 1.0) {
@@ -112,7 +125,7 @@ function determineDispatchPriority(job, evaluation, minNotificationThreshold = 6
     }
   }
 
-  // 4. Critical Push Alert: <= 30 minutes, score >= 75, verified freshness, AND confirmed early-career/fresher experience
+  // 5. Critical Push Alert: <= 30 minutes, score >= 75, verified freshness, AND confirmed early-career/fresher experience
   const isCriticalPush = (job.freshnessVerified === true) && 
                          jobAgeMinutes !== null &&
                          jobAgeMinutes <= 30.0 && 

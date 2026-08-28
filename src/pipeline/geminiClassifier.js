@@ -31,8 +31,8 @@ CRITICAL SENIORITY & EXPERIENCE RULES:
    - If senior/specialist title detected, set isEligible: false, rejectReason: "Seniority or specialist designation exceeds 0-2 years profile".
 2. EXPERIENCE MATCH GRADING:
    - Confirmed 0–1 years / Confirmed 1-2 years / Fresher / Trainee / Graduate: Set experienceCategory: "CONFIRMED_EARLY_CAREER", experienceMatch: 100, candidateExperienceSuitable: true.
-   - No YOE Specified / Unknown Experience: Set experienceCategory: "UNCONFIRMED_UNSPECIFIED", experienceMatch: 60, candidateExperienceSuitable: true, and cap matchScore at 75%.
-   - Mandatory >=2.5 or 3+ years experience: Set experienceCategory: "EXPERIENCED_INELIGIBLE", isEligible: false, candidateExperienceSuitable: false, matchScore <= 40.
+   - No YOE Specified / Unknown Experience: Set experienceCategory: "UNCONFIRMED_UNSPECIFIED", experienceMatch: 60, candidateExperienceSuitable: true, and cap matchScore at 72%.
+   - Mandatory >=2.5 or 3+ years experience (e.g. "8-12 years", "3+ years"): Set experienceCategory: "EXPERIENCED_INELIGIBLE", isEligible: false, candidateExperienceSuitable: false, matchScore <= 30.
 3. OUTPUT:
    - Return strictly valid JSON conforming to the schema.`;
 
@@ -78,20 +78,20 @@ ${job.description.substring(0, 3500)}
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-async function classifyJobWithGemini(job, retryCount = 2) {
+async function classifyJobWithGemini(job, retryCount = 3) {
   const apiKey = (config.geminiApiKey || "").trim();
-  const model = config.geminiModel || "gemini-3.6-flash";
+  const model = config.geminiModel || "gemini-2.5-flash";
 
   const fullText = `${job.title} ${job.description}`.toLowerCase();
   const hasCoreTech = fullText.includes("java") || fullText.includes("spring") || fullText.includes("react");
 
-  // If role doesn't have core keywords, evaluate with fast deterministic heuristic in 0ms
+  // If role doesn't have core keywords, evaluate with fast deterministic heuristic
   if (!hasCoreTech || !apiKey || apiKey === "your_gemini_api_key_here") {
     return generateFallbackEvaluation(job);
   }
 
-  // Pacing delay for genuine candidates
-  await sleep(1500);
+  // Enforce pacing to stay well below 15 RPM free tier limit
+  await sleep(4000);
 
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
   const requestPayload = {
@@ -111,7 +111,7 @@ async function classifyJobWithGemini(job, retryCount = 2) {
   };
 
   let lastError = null;
-  const delays = [2000, 4000];
+  const delays = [6000, 12000, 20000];
 
   for (let attempt = 0; attempt < retryCount; attempt++) {
     try {
@@ -119,7 +119,7 @@ async function classifyJobWithGemini(job, retryCount = 2) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(requestPayload),
-        signal: AbortSignal.timeout(12000)
+        signal: AbortSignal.timeout(15000)
       });
 
       if (response.status === 429) {
@@ -154,7 +154,7 @@ async function classifyJobWithGemini(job, retryCount = 2) {
     }
   }
 
-  console.warn("⚠️ [Gemini] Retries exhausted. Utilizing robust local heuristic evaluation.");
+  console.warn("⚠️ [Gemini] Retries exhausted. Safe fallback rejection.");
   return generateFallbackEvaluation(job, `Gemini API fallback: ${lastError?.message}`);
 }
 
@@ -193,24 +193,29 @@ function generateFallbackEvaluation(job, fallbackReason = null) {
   const hasReact = fullText.includes("react");
   const hasIncompatible = ["angular", "vue", "django", "flask", ".net", "c#", "php"].some(f => fullText.includes(f));
 
-  let isEligible = hasJava || hasSpringBoot;
-  let matchScore = Math.min(95, Math.max(20, Math.round((skillPoints / 65) * 85 + (job.freshnessScore || 80) * 0.15)));
-
-  if (hasIncompatible && !hasReact) {
-    matchScore = Math.min(60, matchScore);
-  }
-
-  // Experience categorization
+  // Check if explicitly early career
   const hasExpConfirmed = fullText.includes("fresher") || fullText.includes("0-1") || fullText.includes("0-2") || fullText.includes("trainee") || fullText.includes("graduate");
   const experienceCategory = hasExpConfirmed ? "CONFIRMED_EARLY_CAREER" : "UNCONFIRMED_UNSPECIFIED";
 
-  if (experienceCategory === "UNCONFIRMED_UNSPECIFIED") {
-    matchScore = Math.min(75, matchScore);
+  // If this is a fallback due to an API error/timeout, do NOT qualify unconfirmed experience!
+  const isFallbackError = Boolean(fallbackReason);
+
+  let isEligible = (hasJava || hasSpringBoot) && (!isFallbackError || hasExpConfirmed);
+  let matchScore = 0;
+
+  if (isFallbackError && !hasExpConfirmed) {
+    // Safety clamp: Unconfirmed fallback jobs are scored below notification threshold (50%)
+    matchScore = 50;
+    isEligible = false;
+  } else {
+    matchScore = Math.min(90, Math.max(20, Math.round((skillPoints / 65) * 85 + (job.freshnessScore || 80) * 0.15)));
+    if (experienceCategory === "UNCONFIRMED_UNSPECIFIED") {
+      matchScore = Math.min(60, matchScore);
+    }
   }
 
-  // Only assign >80 if both Java and Spring Boot/React/REST APIs are strongly aligned
-  if (!hasJava || (!hasSpringBoot && !hasReact)) {
-    matchScore = Math.min(72, matchScore);
+  if (hasIncompatible && !hasReact) {
+    matchScore = Math.min(50, matchScore);
   }
 
   let matchLevel = "Weak Match";
@@ -221,23 +226,24 @@ function generateFallbackEvaluation(job, fallbackReason = null) {
 
   return {
     isEligible,
-    rejectReason: isEligible ? null : "Lacks required Java/Spring Boot orientation",
+    isFallback: true,
+    rejectReason: isEligible ? null : (isFallbackError ? `Unverified in fallback: ${fallbackReason}` : "Lacks required Java/Spring Boot confirmation"),
     matchScore,
     matchLevel,
     experienceCategory,
-    roleMatch: 80,
+    roleMatch: 70,
     skillsMatch: Math.min(100, skillPoints * 2),
-    experienceMatch: experienceCategory === "CONFIRMED_EARLY_CAREER" ? 100 : 60,
+    experienceMatch: experienceCategory === "CONFIRMED_EARLY_CAREER" ? 100 : 50,
     locationMatch: 90,
     educationMatch: 100,
     freshnessScore: job.freshnessScore || 80,
     matchedSkills: matched,
     missingSkills: missing,
     experienceRequired: job.minimumExperience ? `${job.minimumExperience}-${job.maximumExperience || job.minimumExperience + 2} years` : (hasExpConfirmed ? "0-2 years (Early Career)" : "Not specified by source (Unconfirmed)"),
-    candidateExperienceSuitable: true,
+    candidateExperienceSuitable: isEligible,
     whyMatched: `Matched core stack (${matched.slice(0, 4).join(", ")}) aligned with early career development. ${fallbackReason ? `[Note: ${fallbackReason}]` : ""}`,
-    applicationPriority: matchScore >= 80 ? "Apply Immediately" : "Normal Priority",
-    confidence: 0.85
+    applicationPriority: matchScore >= 80 ? "Apply Immediately" : (isEligible ? "Normal Priority" : "Do Not Apply"),
+    confidence: isFallbackError ? 0.40 : 0.75
   };
 }
 
