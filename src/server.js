@@ -37,6 +37,13 @@ function startServer(port = config.port) {
   const server = app.listen(port, () => {
     console.log(`🌐 [Server] HTTP API & Dashboard active on http://localhost:${port}`);
   });
+  server.on("error", (err) => {
+    if (err.code === "EADDRINUSE") {
+      console.log(`🌐 [Server] Port ${port} is already in use by active instance. Dashboard serving on existing instance.`);
+    } else {
+      console.warn(`⚠️ [Server] HTTP Server error:`, err.message);
+    }
+  });
   return server;
 }
 
