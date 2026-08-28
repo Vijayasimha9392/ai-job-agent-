@@ -65,15 +65,15 @@ function calculateOpportunityScore(matchScore = 0, freshnessScore = 0, sourceNam
  */
 function determineDispatchPriority(job, evaluation, minNotificationThreshold = 65) {
   const matchScore = evaluation.matchScore || 0;
-  const jobAgeHours = job.jobAgeHours !== null && job.jobAgeHours !== undefined ? job.jobAgeHours : 999;
-  const jobAgeMinutes = job.jobAgeMinutes !== null && job.jobAgeMinutes !== undefined ? job.jobAgeMinutes : 9999;
+  const jobAgeHours = (job.jobAgeHours !== null && job.jobAgeHours !== undefined && job.jobAgeHours >= 0) ? job.jobAgeHours : null;
+  const jobAgeMinutes = (job.jobAgeMinutes !== null && job.jobAgeMinutes !== undefined && job.jobAgeMinutes >= 0) ? job.jobAgeMinutes : null;
   const isEligible = Boolean(evaluation.isEligible);
   const trustScore = getSourceTrustScore(job.source || job.sourceType);
   const isExperienceConfirmed = evaluation.experienceCategory === "CONFIRMED_EARLY_CAREER" || 
                                 (job.minimumExperience !== null && job.minimumExperience <= 2);
 
-  // 1. ABSOLUTE AGE CUTOFF: Strictly reject > 30 hours
-  if (jobAgeHours > 30.0) {
+  // 1. ABSOLUTE AGE CUTOFF: Strictly reject > 30 hours if age is known
+  if (jobAgeHours !== null && jobAgeHours > 30.0) {
     return {
       shouldNotify: false,
       shouldEmail: false,
@@ -98,20 +98,23 @@ function determineDispatchPriority(job, evaluation, minNotificationThreshold = 6
 
   // 3. Dynamic Qualification Thresholds based on Age Tiers
   let dynamicMinScore = minNotificationThreshold;
-  if (jobAgeHours <= 1.0) {
-    dynamicMinScore = 60; // Tier 1: Fastest early application advantage
-  } else if (jobAgeHours <= 6.0) {
-    dynamicMinScore = 65; // Tier 2
-  } else if (jobAgeHours <= 12.0) {
-    dynamicMinScore = 68; // Tier 3
-  } else if (jobAgeHours <= 24.0) {
-    dynamicMinScore = 70; // Tier 4
-  } else {
-    dynamicMinScore = 75; // Tier 5 (24-30h requires strong match >=75%)
+  if (jobAgeHours !== null) {
+    if (jobAgeHours <= 1.0) {
+      dynamicMinScore = 60; // Tier 1: Fastest early application advantage
+    } else if (jobAgeHours <= 6.0) {
+      dynamicMinScore = 65; // Tier 2
+    } else if (jobAgeHours <= 12.0) {
+      dynamicMinScore = 68; // Tier 3
+    } else if (jobAgeHours <= 24.0) {
+      dynamicMinScore = 70; // Tier 4
+    } else {
+      dynamicMinScore = 75; // Tier 5 (24-30h requires strong match >=75%)
+    }
   }
 
   // 4. Critical Push Alert: <= 30 minutes, score >= 75, verified freshness, AND confirmed early-career/fresher experience
   const isCriticalPush = (job.freshnessVerified === true) && 
+                         jobAgeMinutes !== null &&
                          jobAgeMinutes <= 30.0 && 
                          matchScore >= 75 && 
                          isExperienceConfirmed;

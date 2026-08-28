@@ -34,9 +34,13 @@ async function fetchAdzunaJobs(what = "Java Developer") {
       .map((item) => {
         let parsedPublishedAt = null;
         if (item.created) {
-          const d = new Date(item.created);
-          // If Adzuna timestamp is in the future (skewed), do not use it as verified publishedAt
-          if (!isNaN(d.getTime()) && d.getTime() <= nowUtc + 120000) {
+          // Adzuna IN API returns local Indian time with trailing 'Z' (e.g. 2026-08-28T11:27:39Z = 11:27 AM IST)
+          let dateStr = String(item.created).trim();
+          if (dateStr.endsWith("Z")) {
+            dateStr = dateStr.slice(0, -1) + "+05:30";
+          }
+          const d = new Date(dateStr);
+          if (!isNaN(d.getTime()) && d.getTime() <= nowUtc + 60000) {
             parsedPublishedAt = d.toISOString();
           }
         }
