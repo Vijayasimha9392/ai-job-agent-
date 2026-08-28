@@ -24,7 +24,7 @@ const EXPIRED_PHRASES = [
 ];
 
 /**
- * Calculates programmatic job age in milliseconds
+ * Calculates programmatic job age in milliseconds (UTC reference comparison)
  * @param {string|Date} publishedAt 
  * @param {Date} [referenceTime=new Date()]
  * @returns {number|null}
@@ -35,6 +35,10 @@ function calculateJobAgeMilliseconds(publishedAt, referenceTime = new Date()) {
   if (isNaN(pubDate.getTime())) return null;
 
   const diffMs = referenceTime.getTime() - pubDate.getTime();
+  // If timestamp is more than 3 minutes in the future, it is an invalid/timezone-skewed date
+  if (diffMs < -180000) {
+    return -1;
+  }
   return diffMs < 0 ? 0.0 : diffMs;
 }
 
@@ -47,6 +51,7 @@ function calculateJobAgeMilliseconds(publishedAt, referenceTime = new Date()) {
 function calculateJobAgeMinutes(publishedAt, referenceTime = new Date()) {
   const ms = calculateJobAgeMilliseconds(publishedAt, referenceTime);
   if (ms === null) return null;
+  if (ms === -1) return -1;
   return parseFloat((ms / 60000).toFixed(2));
 }
 
@@ -59,6 +64,7 @@ function calculateJobAgeMinutes(publishedAt, referenceTime = new Date()) {
 function calculateJobAgeHours(publishedAt, referenceTime = new Date()) {
   const ms = calculateJobAgeMilliseconds(publishedAt, referenceTime);
   if (ms === null) return null;
+  if (ms === -1) return -1;
   return parseFloat((ms / 3600000).toFixed(2));
 }
 
@@ -81,7 +87,7 @@ function calculateJobAgeHours(publishedAt, referenceTime = new Date()) {
  * @param {number} [maxAllowedHours=30]
  */
 function getFreshnessScore(jobAgeMinutes, freshnessVerified = true, maxAllowedHours = config.maxJobAgeHours || DEFAULT_MAX_JOB_AGE_HOURS) {
-  if (jobAgeMinutes === null || isNaN(jobAgeMinutes)) {
+  if (jobAgeMinutes === null || isNaN(jobAgeMinutes) || jobAgeMinutes === -1) {
     return {
       score: 50,
       tier: "UNVERIFIED",
@@ -202,17 +208,27 @@ function evaluateJobFreshness(job, referenceTime = new Date()) {
     }
   }
 
-  const jobAgeMilliseconds = calculateJobAgeMilliseconds(job.publishedAt, referenceTime);
-  const jobAgeMinutes = calculateJobAgeMinutes(job.publishedAt, referenceTime);
-  const jobAgeHours = calculateJobAgeHours(job.publishedAt, referenceTime);
-  const freshnessMeta = getFreshnessScore(jobAgeMinutes, job.freshnessVerified);
+  let jobAgeMilliseconds = calculateJobAgeMilliseconds(job.publishedAt, referenceTime);
+  let jobAgeMinutes = calculateJobAgeMinutes(job.publishedAt, referenceTime);
+  let jobAgeHours = calculateJobAgeHours(job.publishedAt, referenceTime);
+  let isFreshnessVerified = job.freshnessVerified;
+
+  // Handle future skewed timestamps
+  if (jobAgeMinutes === -1) {
+    jobAgeMilliseconds = null;
+    jobAgeMinutes = null;
+    jobAgeHours = null;
+    isFreshnessVerified = false;
+  }
+
+  const freshnessMeta = getFreshnessScore(jobAgeMinutes, isFreshnessVerified);
 
   const updatedJob = {
     ...job,
     jobAgeMilliseconds,
     jobAgeMinutes,
     jobAgeHours,
-    freshnessVerified: freshnessMeta.freshnessVerified !== undefined ? freshnessMeta.freshnessVerified : job.freshnessVerified,
+    freshnessVerified: freshnessMeta.freshnessVerified !== undefined ? freshnessMeta.freshnessVerified : isFreshnessVerified,
     freshnessScore: freshnessMeta.score,
     freshnessTier: freshnessMeta.tier,
     freshnessLabel: freshnessMeta.priorityLabel || "Unknown"

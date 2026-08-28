@@ -154,8 +154,8 @@ async function runAllTests() {
   });
 
   await runTest("Critical Priority Flag: <=15 min and score >= 80", () => {
-    const freshJob = { title: "Java Developer", company: "Razorpay", jobAgeMinutes: 4.5, jobAgeHours: 0.08, source: "Greenhouse" };
-    const evalResult = { isEligible: true, matchScore: 88, roleMatch: 90 };
+    const freshJob = { title: "Java Developer", company: "Razorpay", jobAgeMinutes: 4.5, jobAgeHours: 0.08, source: "Greenhouse", freshnessVerified: true, minimumExperience: 0 };
+    const evalResult = { isEligible: true, matchScore: 88, roleMatch: 90, experienceCategory: "CONFIRMED_EARLY_CAREER" };
     const priority = determineDispatchPriority(freshJob, evalResult, 65);
     assert.strictEqual(priority.shouldNotify, true);
     assert.strictEqual(priority.priorityLevel, "CRITICAL");
@@ -167,6 +167,7 @@ async function runAllTests() {
       job: {
         title: "Software Engineer",
         company: "Company A",
+        freshnessVerified: true,
         publishedAt: new Date(now.getTime() - 8 * 60 * 1000).toISOString()
       },
       evaluation: { matchScore: 82 }
@@ -175,6 +176,7 @@ async function runAllTests() {
       job: {
         title: "Java Backend Developer",
         company: "Company D",
+        freshnessVerified: true,
         publishedAt: new Date(now.getTime() - 4 * 60 * 60 * 1000).toISOString()
       },
       evaluation: { matchScore: 93 }
@@ -202,6 +204,7 @@ async function runAllTests() {
         jobAgeHours: 0.13,
         source: "Greenhouse",
         sourceType: "Official ATS",
+        freshnessVerified: true,
         applicationUrl: "https://boards.greenhouse.io/razorpay/123",
         publishedAt: new Date().toISOString()
       },
@@ -210,6 +213,7 @@ async function runAllTests() {
         isEligible: true,
         matchScore: 88,
         matchLevel: "Strong Match",
+        experienceCategory: "CONFIRMED_EARLY_CAREER",
         matchedSkills: ["Java", "Spring Boot", "REST APIs", "MySQL"],
         missingSkills: ["Kafka"],
         whyMatched: "Excellent alignment with Core Java, Spring Boot and relational databases",

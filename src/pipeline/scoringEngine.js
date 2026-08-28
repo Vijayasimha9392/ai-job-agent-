@@ -69,6 +69,8 @@ function determineDispatchPriority(job, evaluation, minNotificationThreshold = 6
   const jobAgeMinutes = job.jobAgeMinutes !== null && job.jobAgeMinutes !== undefined ? job.jobAgeMinutes : 9999;
   const isEligible = Boolean(evaluation.isEligible);
   const trustScore = getSourceTrustScore(job.source || job.sourceType);
+  const isExperienceConfirmed = evaluation.experienceCategory === "CONFIRMED_EARLY_CAREER" || 
+                                (job.minimumExperience !== null && job.minimumExperience <= 2);
 
   // 1. ABSOLUTE AGE CUTOFF: Strictly reject > 30 hours
   if (jobAgeHours > 30.0) {
@@ -108,8 +110,11 @@ function determineDispatchPriority(job, evaluation, minNotificationThreshold = 6
     dynamicMinScore = 75; // Tier 5 (24-30h requires strong match >=75%)
   }
 
-  // 4. Critical Push Alert: <= 30 minutes and score >= 70
-  const isCriticalPush = jobAgeMinutes <= 30.0 && matchScore >= 70;
+  // 4. Critical Push Alert: <= 30 minutes, score >= 75, verified freshness, AND confirmed early-career/fresher experience
+  const isCriticalPush = (job.freshnessVerified === true) && 
+                         jobAgeMinutes <= 30.0 && 
+                         matchScore >= 75 && 
+                         isExperienceConfirmed;
 
   if (matchScore >= dynamicMinScore) {
     let priorityLevel = "GOOD";
@@ -163,19 +168,18 @@ function sortJobsByFreshnessFirst(items = []) {
     const jobA = a.job || a;
     const jobB = b.job || b;
 
-    const timeA = jobA.publishedAt ? new Date(jobA.publishedAt).getTime() : 0;
-    const timeB = jobB.publishedAt ? new Date(jobB.publishedAt).getTime() : 0;
+    const timeA = (jobA.freshnessVerified && jobA.publishedAt) ? new Date(jobA.publishedAt).getTime() : 0;
+    const timeB = (jobB.freshnessVerified && jobB.publishedAt) ? new Date(jobB.publishedAt).getTime() : 0;
 
-    // 1. Primary sort: Publication Time DESC (Newest first)
+    // 1. Primary sort: Publication Time DESC (Newest verified first)
     const timeDiff = timeB - timeA;
     const tenMinutesMs = 10 * 60 * 1000;
 
-    // If publication timestamps differ by more than 10 minutes, newest wins unconditionally
     if (Math.abs(timeDiff) > tenMinutesMs) {
       return timeDiff;
     }
 
-    // 2. Secondary sort: Match Score DESC (Highest score wins for jobs posted around the same time)
+    // 2. Secondary sort: Match Score DESC
     const scoreA = a.evaluation?.matchScore || jobA.matchScore || 0;
     const scoreB = b.evaluation?.matchScore || jobB.matchScore || 0;
     const scoreDiff = scoreB - scoreA;

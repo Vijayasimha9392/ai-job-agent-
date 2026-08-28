@@ -1,5 +1,5 @@
 // =====================================================================
-// Live HTTP Application URL Verification & Anti-Hallucination Engine
+// Live HTTP Application URL Verification & Reachability Engine
 // =====================================================================
 
 const GENERIC_CAREER_HOMEPAGES = [
@@ -25,9 +25,14 @@ const ERROR_PAGE_SNIPPETS = [
   "job not found",
   "page not found",
   "this job is no longer available",
+  "job unavailable",
+  "job is unavailable",
   "this vacancy has closed",
   "opening has expired",
+  "job expired",
+  "this listing has expired",
   "no longer accepting applications",
+  "position filled",
   "this posting has been removed",
   "the page you are looking for doesn't exist",
   "error 404",
@@ -76,7 +81,7 @@ async function verifyApplicationUrl(job) {
     }
   }
 
-  // 4. Perform Live HTTP Verification Request
+  // 4. Perform Live HTTP Reachability Request
   try {
     const response = await fetch(url, {
       method: "GET",

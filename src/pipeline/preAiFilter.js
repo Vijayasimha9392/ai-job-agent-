@@ -10,15 +10,16 @@ const TITLE_DEV_REQUIRED = [
 ];
 
 const SENIORITY_BLACKLIST = [
-  "senior", "sr.", "sr ", "lead", "principal", "staff engineer", "staff", "architect",
+  "senior", "sr.", "sr ", "sr", "lead", "principal", "staff engineer", "staff", "architect",
   "engineering manager", "manager", "director", "vp", "head of engineering",
   "tech lead", "technical lead", "solution architect", "enterprise architect",
   "chief technology", "associate director", "group lead", "head of", "executive",
-  "software engineer 2", "software engineer ii", "software engineer iii", "software engineer 3",
-  "software developer 2", "software developer ii", "software developer iii", "software developer 3",
-  "sde 2", "sde ii", "sde iii", "sde-2", "sde-ii", "sde-3", "sde-iii",
-  "level 2", "level ii", "level 3", "level iii", "mid-level", "mid level",
-  "specialist ii", "specialist 2"
+  "consultant specialist", "consultant", "specialist", "assistant vice president", "avp",
+  "vice president", "software engineer 2", "software engineer ii", "software engineer iii",
+  "software engineer 3", "software developer 2", "software developer ii", "software developer iii",
+  "software developer 3", "sde 2", "sde ii", "sde iii", "sde-2", "sde-ii", "sde-3", "sde-iii",
+  "sde2", "sde3", "level 2", "level ii", "level 3", "level iii", "mid-level", "mid level",
+  "specialist ii", "specialist 2", "senior associate"
 ];
 
 const NON_DEV_BLACKLIST = [
@@ -50,17 +51,6 @@ const EXPIRED_KEYWORDS = [
   "no longer available"
 ];
 
-const NON_INDIA_LOCATIONS = [
-  "germany", "deutschland", "dach", "france", "uk", "united kingdom", "london", "berlin",
-  "munich", "frankfurt", "paris", "poland", "romania", "netherlands", "amsterdam",
-  "brazil", "mexico", "philippines"
-];
-
-/**
- * Evaluates whether a job passes deterministic rule-based checks
- * @param {object} job 
- * @returns {object} { isPass: boolean, reason?: string, filterCategory?: string }
- */
 const NON_TARGET_TECH = [
   "c++", "embedded", "cybersecurity", "cyber security", "automotive", "hardware",
   "diagnostic", "firmware", "autocad", "sap", "abap", "salesforce", "mainframe",
@@ -69,6 +59,31 @@ const NON_TARGET_TECH = [
   "golang", "rust developer"
 ];
 
+const INDIAN_LOCATIONS = [
+  "india", "bengaluru", "bangalore", "hyderabad", "pune", "chennai", "mumbai",
+  "delhi", "ncr", "noida", "gurgaon", "gurugram", "kolkata", "ahmedabad",
+  "kochi", "coimbatore", "chandigarh", "jaipur", "indore", "trivandrum",
+  "thiruvananthapuram", "mysore", "mysuru", "mohali", "bhubaneswar",
+  "secunderabad", "karnataka", "telangana", "maharashtra", "tamil nadu",
+  "kerala", "haryana", "uttar pradesh"
+];
+
+const FOREIGN_LOCATIONS = [
+  "united states", "usa", "us", "united kingdom", "uk", "london", "germany",
+  "deutschland", "berlin", "munich", "frankfurt", "france", "paris", "canada",
+  "toronto", "vancouver", "australia", "sydney", "melbourne", "singapore",
+  "netherlands", "amsterdam", "poland", "warsaw", "krakow", "sweden",
+  "stockholm", "switzerland", "zurich", "dubai", "uae", "brazil", "mexico",
+  "philippines", "japan", "tokyo", "ireland", "dublin", "austin", "san francisco",
+  "seattle", "new york", "california", "texas", "chicago", "boston", "los angeles",
+  "emea", "latam", "apac", "romania", "hungary", "spain", "madrid", "italy", "rome"
+];
+
+/**
+ * Evaluates whether a job passes deterministic rule-based checks
+ * @param {object} job 
+ * @returns {object} { isPass: boolean, reason?: string, filterCategory?: string }
+ */
 function applyPreAiFilter(job) {
   const title = (job.title || "").toLowerCase();
   const desc = (job.description || "").toLowerCase();
@@ -104,18 +119,12 @@ function applyPreAiFilter(job) {
   }
 
   // 3. Reject Seniority Blacklist in Title (with punctuation-clean matching)
-  const seniorityWords = [
-    "senior", "sr", "lead", "principal", "staff", "architect", "manager",
-    "director", "vp", "head", "executive", "level 2", "level ii", "level 3",
-    "level iii", "mid level", "midlevel", "sde 2", "sde ii", "sde 3", "sde iii",
-    "sde2", "sde3", "tech lead", "solution architect", "enterprise architect"
-  ];
-  for (const term of seniorityWords) {
-    const regex = new RegExp(`\\b${term}\\b`, "i");
+  for (const term of SENIORITY_BLACKLIST) {
+    const regex = new RegExp(`\\b${term.replace(".", "\\.")}\\b`, "i");
     if (regex.test(normTitle)) {
       return {
         isPass: false,
-        reason: `Seniority / Mid-level keyword detected in title: "${term}"`,
+        reason: `Seniority / Leadership keyword detected in title: "${term}"`,
         filterCategory: "SENIORITY"
       };
     }
@@ -144,26 +153,6 @@ function applyPreAiFilter(job) {
       };
     }
   }
-
-const INDIAN_LOCATIONS = [
-  "india", "bengaluru", "bangalore", "hyderabad", "pune", "chennai", "mumbai",
-  "delhi", "ncr", "noida", "gurgaon", "gurugram", "kolkata", "ahmedabad",
-  "kochi", "coimbatore", "chandigarh", "jaipur", "indore", "trivandrum",
-  "thiruvananthapuram", "mysore", "mysuru", "mohali", "bhubaneswar",
-  "secunderabad", "karnataka", "telangana", "maharashtra", "tamil nadu",
-  "kerala", "haryana", "uttar pradesh"
-];
-
-const FOREIGN_LOCATIONS = [
-  "united states", "usa", "us", "united kingdom", "uk", "london", "germany",
-  "deutschland", "berlin", "munich", "frankfurt", "france", "paris", "canada",
-  "toronto", "vancouver", "australia", "sydney", "melbourne", "singapore",
-  "netherlands", "amsterdam", "poland", "warsaw", "krakow", "sweden",
-  "stockholm", "switzerland", "zurich", "dubai", "uae", "brazil", "mexico",
-  "philippines", "japan", "tokyo", "ireland", "dublin", "austin", "san francisco",
-  "seattle", "new york", "california", "texas", "chicago", "boston", "los angeles",
-  "emea", "latam", "apac", "romania", "hungary", "spain", "madrid", "italy", "rome"
-];
 
   // 6. Strict India Location Verification (Candidate is based in Hyderabad / India)
   const locLower = (job.location || "").toLowerCase();
@@ -201,8 +190,8 @@ const FOREIGN_LOCATIONS = [
     }
   }
 
-  // 6. Deep Experience Analysis (Reject 3+ years mandatory experience)
-  if (job.minimumExperience !== null && job.minimumExperience >= 3.0) {
+  // 7. Deep Experience Analysis (Reject >= 2.5 or 3+ years mandatory experience)
+  if (job.minimumExperience !== null && job.minimumExperience >= 2.5) {
     return {
       isPass: false,
       reason: `Mandatory minimum experience (${job.minimumExperience} years) exceeds candidate profile (0-2 years, 2025 B.Tech)`,
@@ -210,7 +199,7 @@ const FOREIGN_LOCATIONS = [
     };
   }
 
-  // Regex 6A: "minimum 3+ years", "at least 3 years", "requires 4-6 years", "3 to 5 years"
+  // Regex 7A: "minimum 3+ years", "at least 3 years", "requires 4-6 years", "3 to 5 years", "2+ years" (if 3+)
   const expMatch = fullText.match(/(?:minimum|min|requires?|mandatory|at least|with|\b)\s*([3-9]|\d{2})\+?\s*(?:-|to|\+)?\s*\d*\s*(?:years?|yrs?)(?:\s+of\s+experience|\s+experience)?/i);
   if (expMatch) {
     const minYears = parseInt(expMatch[1], 10);
@@ -223,7 +212,7 @@ const FOREIGN_LOCATIONS = [
     }
   }
 
-  // Regex 6B: Explicit range "3-5 years", "3 - 7 yrs", "4-6 yrs"
+  // Regex 7B: Explicit range "3-5 years", "3 - 7 yrs", "4-6 yrs"
   const rangeMatch = fullText.match(/\b([3-9])\s*(?:-|to)\s*(\d+)\s*(?:years?|yrs?)/i);
   if (rangeMatch) {
     const startRange = parseInt(rangeMatch[1], 10);
@@ -236,7 +225,7 @@ const FOREIGN_LOCATIONS = [
     }
   }
 
-  // 7. Must have a valid application URL
+  // 8. Must have a valid application URL
   if (!job.applicationUrl || job.applicationUrl.trim().length < 5) {
     return {
       isPass: false,

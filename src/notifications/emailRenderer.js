@@ -25,8 +25,8 @@ function formatDisplayDate(isoString, timezone = "Asia/Kolkata") {
 /**
  * Formats clean age string (e.g. "8 minutes ago", "1 hour ago", "4 hours ago")
  */
-function formatAgeString(jobAgeMinutes, jobAgeHours) {
-  if (jobAgeMinutes === null || jobAgeMinutes === undefined || isNaN(jobAgeMinutes)) {
+function formatAgeString(jobAgeMinutes, jobAgeHours, freshnessVerified = true) {
+  if (!freshnessVerified || jobAgeMinutes === null || jobAgeMinutes === undefined || isNaN(jobAgeMinutes) || jobAgeMinutes < 0) {
     return "Publication time not specified";
   }
   if (jobAgeMinutes < 1) return "Just now";
@@ -103,18 +103,25 @@ The agent will check again in 55 minutes.`;
 
   // CASE 2: VERIFIED JOBS FOUND (SORTED NEWEST FIRST)
   const topMatch = Math.max(...sortedJobs.map(j => j.evaluation?.matchScore || 0));
-  const hasCritical = sortedJobs.some(item => item.dispatchMeta?.priorityLevel === "CRITICAL" || (item.job.jobAgeMinutes !== null && item.job.jobAgeMinutes <= 30));
-  const subject = `Job Hunter AI — ${count} New Matching Job${count > 1 ? "s" : ""} (${topMatch}% Top Match)`;
+  const hasCritical = sortedJobs.some(item => item.dispatchMeta?.priorityLevel === "CRITICAL");
+  const subject = `${hasCritical ? "CRITICAL: " : ""}Job Hunter AI — ${count} New Matching Job${count > 1 ? "s" : ""} (${topMatch}% Top Match)`;
 
   // Build Plain Text (Newest to Oldest)
   const jobTextItems = sortedJobs.map((item, idx) => {
     const { job, evaluation, dispatchMeta } = item;
-    const isCritical = dispatchMeta?.priorityLevel === "CRITICAL" || (job.jobAgeMinutes !== null && job.jobAgeMinutes <= 30);
-    const ageStr = formatAgeString(job.jobAgeMinutes, job.jobAgeHours);
+    const isCritical = dispatchMeta?.priorityLevel === "CRITICAL";
+    const ageStr = formatAgeString(job.jobAgeMinutes, job.jobAgeHours, job.freshnessVerified);
     const pubStr = formatDisplayDate(job.publishedAt, timezone);
     const firstDetectedStr = formatDisplayDate(job.discoveredAt || job.retrievedAt, timezone);
+    const expDisplay = evaluation.experienceCategory === "CONFIRMED_EARLY_CAREER" 
+      ? "Confirmed 0-2 years (Early Career / Fresher)"
+      : (evaluation.experienceRequired || "Not specified by source (Unconfirmed)");
 
-    return `#${idx + 1} — Posted ${ageStr} ${isCritical ? "[🚨 CRITICAL]" : ""}
+    const headerLabel = job.freshnessVerified 
+      ? `#${idx + 1} — Posted ${ageStr} ${isCritical ? "[🚨 CRITICAL]" : ""}`
+      : `#${idx + 1} — Verified Opportunity (Match: ${evaluation.matchScore}%)`;
+
+    return `${headerLabel}
 ${job.title} — ${job.company}
 Match: ${evaluation.matchScore}% (${evaluation.matchLevel || "Strong Match"})
 Source: ${job.source} (${job.sourceType || "Official ATS"})
@@ -122,7 +129,8 @@ Verified Job ID: ${job.sourceJobId || job.jobReferenceId || job.jobId}
 Published: ${pubStr}
 First Detected: ${firstDetectedStr}
 Location: ${job.location} (${job.workMode || "On-site"})
-Experience: ${evaluation.experienceRequired || "0-2 years"}
+Experience: ${expDisplay}
+Verification: ✓ Job URL Reachable (HTTP 200)
 Matched Skills: ${(evaluation.matchedSkills || []).join(", ") || "Java, Spring Boot, REST APIs"}
 Why It Matches: ${evaluation.whyMatched || "Direct alignment with candidate profile"}
 Direct Application: ${job.applicationUrl}`;
@@ -137,15 +145,22 @@ ${jobTextItems}
 ==================================================
 🛡️ Absolute Freshness Policy: Max Age 30 Hours.
 ✅ Previously notified jobs are excluded automatically.
-🔗 Every link is verified as an active, genuine vacancy URL.`;
+🔗 Every link is verified as an active, genuine vacancy URL (HTTP 200 reachable).`;
 
   // Build HTML Cards (Newest to Oldest)
   const jobHtmlCards = sortedJobs.map((item, idx) => {
     const { job, evaluation, dispatchMeta } = item;
-    const isCritical = dispatchMeta?.priorityLevel === "CRITICAL" || (job.jobAgeMinutes !== null && job.jobAgeMinutes <= 30);
-    const ageStr = formatAgeString(job.jobAgeMinutes, job.jobAgeHours);
+    const isCritical = dispatchMeta?.priorityLevel === "CRITICAL";
+    const ageStr = formatAgeString(job.jobAgeMinutes, job.jobAgeHours, job.freshnessVerified);
     const pubStr = formatDisplayDate(job.publishedAt, timezone);
     const firstDetectedStr = formatDisplayDate(job.discoveredAt || job.retrievedAt, timezone);
+    const expDisplay = evaluation.experienceCategory === "CONFIRMED_EARLY_CAREER" 
+      ? "<span style='color:#16a34a;font-weight:600;'>Confirmed 0–2 years (Early Career / Fresher)</span>"
+      : `<span style='color:#64748b;'>${evaluation.experienceRequired || "Not specified by source (Unconfirmed)"}</span>`;
+
+    const badgeHeader = job.freshnessVerified 
+      ? `#${idx + 1} — Posted ${ageStr}`
+      : `#${idx + 1} — Verified Opportunity`;
 
     const matchedList = (evaluation.matchedSkills || []).slice(0, 6);
     const matchedChips = matchedList.map(s => `<span style="display:inline-block;background:#eff6ff;color:#1d4ed8;padding:3px 8px;border-radius:4px;font-size:11px;font-weight:600;margin:2px;">✓ ${s}</span>`).join(" ");
@@ -154,7 +169,7 @@ ${jobTextItems}
     <div style="background:#ffffff;border:1px solid ${isCritical ? '#f87171' : '#e2e8f0'};border-left:4px solid ${isCritical ? '#dc2626' : '#2563eb'};border-radius:8px;padding:18px;margin-bottom:16px;box-shadow:0 1px 3px rgba(0,0,0,0.05);">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">
         <div>
-          <span style="background:${isCritical ? '#dc2626' : '#1e293b'};color:#ffffff;font-size:11px;font-weight:700;padding:3px 8px;border-radius:4px;margin-right:6px;">#${idx + 1} — Posted ${ageStr}</span>
+          <span style="background:${isCritical ? '#dc2626' : '#1e293b'};color:#ffffff;font-size:11px;font-weight:700;padding:3px 8px;border-radius:4px;margin-right:6px;">${badgeHeader}</span>
           <div style="font-size:16px;font-weight:700;color:#0f172a;margin-top:6px;">${job.title}</div>
           <div style="font-size:14px;font-weight:600;color:#2563eb;margin-top:2px;">${job.company} • <span style="color:#64748b;font-size:12px;">via ${job.source} (${job.sourceType || 'Official ATS'})</span></div>
         </div>
@@ -167,11 +182,11 @@ ${jobTextItems}
 
       <div style="font-size:13px;color:#475569;margin-bottom:10px;line-height:1.6;">
         📍 <strong>Location:</strong> ${job.location} (${job.workMode || "On-site"})<br>
-        💼 <strong>Experience:</strong> ${evaluation.experienceRequired || "0-2 years"}<br>
+        💼 <strong>Experience:</strong> ${expDisplay}<br>
         🆔 <strong>Verified Job ID:</strong> <code>${job.sourceJobId || job.jobReferenceId || job.jobId}</code><br>
-        🕒 <strong>Published:</strong> ${pubStr} (<strong>${ageStr}</strong>)<br>
+        🕒 <strong>Published:</strong> ${pubStr} ${job.freshnessVerified ? `(<strong>${ageStr}</strong>)` : ""}<br>
         👁️ <strong>First Detected:</strong> ${firstDetectedStr}<br>
-        🛡️ <strong>Verification:</strong> <span style="color:#16a34a;font-weight:600;">✓ Verified Active Vacancy URL (HTTP 200)</span>
+        🛡️ <strong>Verification:</strong> <span style="color:#16a34a;font-weight:600;">✓ Job URL Reachable (HTTP 200)</span>
       </div>
 
       ${matchedChips ? `<div style="margin-bottom:10px;"><strong>Matched Skills:</strong> ${matchedChips}</div>` : ""}
@@ -221,7 +236,7 @@ ${jobTextItems}
     <div class="footer">
       ⏰ Absolute Freshness Policy: Maximum Age 30 Hours.<br>
       ✅ Previously notified jobs are automatically excluded.<br>
-      🛡️ 100% Verified Active Vacancy URLs with HTTP status checks.
+      🛡️ 100% Verified Reachable Vacancy URLs with live HTTP status checks.
     </div>
   </div>
 </body>

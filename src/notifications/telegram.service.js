@@ -17,16 +17,16 @@ function escapeHtml(text) {
 }
 
 /**
- * Formats clean age string (e.g. "8 minutes ago", "1 hour ago", "4 hours ago")
+ * Formats clean age string (e.g. "8m ago", "1h ago", "4h ago")
  */
-function formatAgeString(jobAgeMinutes, jobAgeHours) {
-  if (jobAgeMinutes === null || jobAgeMinutes === undefined || isNaN(jobAgeMinutes)) {
-    return "Recently";
+function formatAgeString(jobAgeMinutes, jobAgeHours, freshnessVerified = true) {
+  if (!freshnessVerified || jobAgeMinutes === null || jobAgeMinutes === undefined || isNaN(jobAgeMinutes) || jobAgeMinutes < 0) {
+    return "Verified";
   }
   if (jobAgeMinutes < 1) return "Just now";
-  if (jobAgeMinutes < 60) return `${Math.round(jobAgeMinutes)} minutes ago`;
+  if (jobAgeMinutes < 60) return `${Math.round(jobAgeMinutes)}m ago`;
   const hrs = Math.round(jobAgeHours || jobAgeMinutes / 60);
-  return hrs === 1 ? "1 hour ago" : `${hrs} hours ago`;
+  return hrs === 1 ? "1h ago" : `${hrs}h ago`;
 }
 
 /**
@@ -34,24 +34,29 @@ function formatAgeString(jobAgeMinutes, jobAgeHours) {
  */
 function formatSingleJobTelegram(item) {
   const { job, evaluation, dispatchMeta } = item;
-  const isCritical = dispatchMeta?.priorityLevel === "CRITICAL" || (job.jobAgeMinutes !== null && job.jobAgeMinutes <= 30);
-  const ageStr = formatAgeString(job.jobAgeMinutes, job.jobAgeHours);
+  const isCritical = dispatchMeta?.priorityLevel === "CRITICAL";
+  const ageStr = formatAgeString(job.jobAgeMinutes, job.jobAgeHours, job.freshnessVerified);
+  const expDisplay = evaluation.experienceCategory === "CONFIRMED_EARLY_CAREER" 
+    ? "Confirmed 0-2 years (Early Career / Fresher)"
+    : (evaluation.experienceRequired || "Not specified by source (Unconfirmed)");
 
   const skills = (evaluation.matchedSkills || ["Java", "Spring Boot"]).slice(0, 5);
   const skillsList = skills.map(s => `✅ ${escapeHtml(s)}`).join("\n");
 
-  const header = isCritical ? `🚨 <b>CRITICAL FRESH MATCH (Posted ${ageStr})</b>` : `🔥 <b>NEW JOB MATCH (Posted ${ageStr})</b>`;
+  const header = job.freshnessVerified
+    ? (isCritical ? `🚨 <b>CRITICAL FRESH MATCH (Posted ${ageStr})</b>` : `🔥 <b>NEW JOB MATCH (Posted ${ageStr})</b>`)
+    : `🎯 <b>VERIFIED JOB OPPORTUNITY (${evaluation.matchScore}% Match)</b>`;
 
   return `${header}
 
 🏢 <b>Company:</b> ${escapeHtml(job.company)}
 💼 <b>Role:</b> ${escapeHtml(job.title)}
 📍 <b>Location:</b> ${escapeHtml(job.location)} (${escapeHtml(job.workMode || "On-site")})
+💼 <b>Experience:</b> ${escapeHtml(expDisplay)}
 🆔 <b>Job ID:</b> <code>${escapeHtml(job.sourceJobId || job.jobReferenceId || job.jobId)}</code>
 🌐 <b>Source:</b> ${escapeHtml(job.source)} (${escapeHtml(job.sourceType || "Official ATS")})
-🕒 <b>Posted:</b> ${ageStr}
 🎯 <b>Match:</b> ${evaluation.matchScore}% (${escapeHtml(evaluation.matchLevel || "Strong Match")})
-🛡️ <b>Status:</b> Verified Active Vacancy URL (HTTP 200)
+🛡️ <b>Status:</b> Job URL Reachable (HTTP 200)
 
 ${skillsList}
 
@@ -75,12 +80,17 @@ function formatBatchTelegramMessages(batch) {
 
   for (let i = 0; i < sortedBatch.length; i++) {
     const { job, evaluation, dispatchMeta } = sortedBatch[i];
-    const isCritical = dispatchMeta?.priorityLevel === "CRITICAL" || (job.jobAgeMinutes !== null && job.jobAgeMinutes <= 30);
-    const ageStr = formatAgeString(job.jobAgeMinutes, job.jobAgeHours);
+    const isCritical = dispatchMeta?.priorityLevel === "CRITICAL";
+    const ageStr = formatAgeString(job.jobAgeMinutes, job.jobAgeHours, job.freshnessVerified);
+    const expDisplay = evaluation.experienceCategory === "CONFIRMED_EARLY_CAREER" ? "0-2y" : "Unspecified";
 
-    const itemText = `<b>#${i + 1} — Posted ${ageStr}</b> ${isCritical ? "🚨 [CRITICAL]" : ""}
+    const header = job.freshnessVerified
+      ? `<b>#${i + 1} — Posted ${ageStr}</b> ${isCritical ? "🚨 [CRITICAL]" : ""}`
+      : `<b>#${i + 1} — Verified Opportunity</b>`;
+
+    const itemText = `${header}
 💼 <b>${escapeHtml(job.title)}</b> — ${escapeHtml(job.company)}
-🎯 <b>Match:</b> ${evaluation.matchScore}% | 📍 ${escapeHtml(job.location)}
+🎯 <b>Match:</b> ${evaluation.matchScore}% | 📍 ${escapeHtml(job.location)} | 💼 ${escapeHtml(expDisplay)}
 🌐 <b>Source:</b> ${escapeHtml(job.source)} (<code>${escapeHtml(job.sourceJobId || job.jobReferenceId || job.jobId)}</code>)
 🔗 <b>Apply:</b> <a href="${job.applicationUrl}">Apply on Verified Portal</a>\n\n`;
 

@@ -15,7 +15,7 @@ ABSOLUTE ANTI-HALLUCINATION & IMMUTABILITY RULES:
 
 CANDIDATE RESUME PROFILE:
 - Name: Vijayasimha Tammineni
-- Target Title: Java Full Stack Developer / Software Engineer (0-2 years)
+- Target Title: Java Full Stack Developer / Software Engineer (0-2 years / Fresher / Trainee)
 - Education: Bachelor of Technology in Computer Science and Engineering (September 2021 – May 2025, Malla Reddy University, Hyderabad)
 - Experience: 8 months professional experience as Trainee Developer at Virinchi Ltd (September 2025 – May 2026, Project: V23 – Healthcare Platform)
 - Primary Tech Stack:
@@ -25,15 +25,16 @@ CANDIDATE RESUME PROFILE:
   * Tools & Methodologies: Git, GitHub, Maven, Postman, Eclipse, VS Code, Agile, Scrum, SDLC
 - Incompatible Frameworks: Angular, Vue.js, Django, Flask, ASP.NET, .NET, PHP (Reject or score low if mandatory).
 
-SCORING RULES:
-1. MATCH SCORE THRESHOLD:
-   - Give high matchScore (>= 80) only if the role strongly aligns with Java + Spring Boot + React.js / Backend REST APIs / MySQL for early career developers (0-2 years).
-   - If predominantly Python, PHP, C#/.NET, or Mobile, score <= 60 or mark isEligible: false.
-2. EXPERIENCE ANALYSIS:
-   - If the job explicitly requires 3+ years mandatory experience, mark isEligible: false and candidateExperienceSuitable: false.
-   - Mark candidateExperienceSuitable: true for Fresher, Junior, Trainee, Associate Software Engineer, Software Engineer 1, or 0-2 years roles.
+CRITICAL SENIORITY & EXPERIENCE RULES:
+1. SENIORITY REJECTION:
+   - Reject titles containing: "Consultant Specialist", "Specialist", "Consultant", "AVP", "Vice President", "Lead", "Tech Lead", "Architect", "Principal", "Staff", "Manager", "Director", "Software Engineer 2/3", "SDE 2/3" unless the JD explicitly states it is an entry-level / 0-2 years role.
+   - If senior/specialist title detected, set isEligible: false, rejectReason: "Seniority or specialist designation exceeds 0-2 years profile".
+2. EXPERIENCE MATCH GRADING:
+   - Confirmed 0–1 years / Confirmed 1-2 years / Fresher / Trainee / Graduate: Set experienceCategory: "CONFIRMED_EARLY_CAREER", experienceMatch: 100, candidateExperienceSuitable: true.
+   - No YOE Specified / Unknown Experience: Set experienceCategory: "UNCONFIRMED_UNSPECIFIED", experienceMatch: 60, candidateExperienceSuitable: true, and cap matchScore at 75%.
+   - Mandatory >=2.5 or 3+ years experience: Set experienceCategory: "EXPERIENCED_INELIGIBLE", isEligible: false, candidateExperienceSuitable: false, matchScore <= 40.
 3. OUTPUT:
-   - Return strictly valid JSON conforming to the requested schema.`;
+   - Return strictly valid JSON conforming to the schema.`;
 
 function buildGeminiPrompt(job) {
   return `Please evaluate the following job posting for our candidate:
@@ -58,6 +59,7 @@ ${job.description.substring(0, 3500)}
   "rejectReason": string | null,
   "matchScore": number (0-100),
   "matchLevel": "Excellent Match" | "Strong Match" | "Good Match" | "Possible Match" | "Weak Match",
+  "experienceCategory": "CONFIRMED_EARLY_CAREER" | "UNCONFIRMED_UNSPECIFIED" | "EXPERIENCED_INELIGIBLE",
   "roleMatch": number (0-100),
   "skillsMatch": number (0-100),
   "experienceMatch": number (0-100),
@@ -161,6 +163,9 @@ function validateEvaluationSchema(data) {
   if (typeof data.matchScore !== "number") data.matchScore = parseInt(data.matchScore || 0, 10);
   if (!Array.isArray(data.matchedSkills)) data.matchedSkills = [];
   if (!Array.isArray(data.missingSkills)) data.missingSkills = [];
+  if (!data.experienceCategory) {
+    data.experienceCategory = data.experienceRequired && (data.experienceRequired.includes("0") || data.experienceRequired.includes("1") || data.experienceRequired.includes("2")) ? "CONFIRMED_EARLY_CAREER" : "UNCONFIRMED_UNSPECIFIED";
+  }
   if (!data.matchLevel) {
     if (data.matchScore >= 85) data.matchLevel = "Excellent Match";
     else if (data.matchScore >= 75) data.matchLevel = "Strong Match";
@@ -195,6 +200,14 @@ function generateFallbackEvaluation(job, fallbackReason = null) {
     matchScore = Math.min(60, matchScore);
   }
 
+  // Experience categorization
+  const hasExpConfirmed = fullText.includes("fresher") || fullText.includes("0-1") || fullText.includes("0-2") || fullText.includes("trainee") || fullText.includes("graduate");
+  const experienceCategory = hasExpConfirmed ? "CONFIRMED_EARLY_CAREER" : "UNCONFIRMED_UNSPECIFIED";
+
+  if (experienceCategory === "UNCONFIRMED_UNSPECIFIED") {
+    matchScore = Math.min(75, matchScore);
+  }
+
   // Only assign >80 if both Java and Spring Boot/React/REST APIs are strongly aligned
   if (!hasJava || (!hasSpringBoot && !hasReact)) {
     matchScore = Math.min(72, matchScore);
@@ -211,15 +224,16 @@ function generateFallbackEvaluation(job, fallbackReason = null) {
     rejectReason: isEligible ? null : "Lacks required Java/Spring Boot orientation",
     matchScore,
     matchLevel,
+    experienceCategory,
     roleMatch: 80,
     skillsMatch: Math.min(100, skillPoints * 2),
-    experienceMatch: 85,
+    experienceMatch: experienceCategory === "CONFIRMED_EARLY_CAREER" ? 100 : 60,
     locationMatch: 90,
     educationMatch: 100,
     freshnessScore: job.freshnessScore || 80,
     matchedSkills: matched,
     missingSkills: missing,
-    experienceRequired: job.minimumExperience ? `${job.minimumExperience}-${job.maximumExperience || job.minimumExperience + 2} years` : "0-2 years",
+    experienceRequired: job.minimumExperience ? `${job.minimumExperience}-${job.maximumExperience || job.minimumExperience + 2} years` : (hasExpConfirmed ? "0-2 years (Early Career)" : "Not specified by source (Unconfirmed)"),
     candidateExperienceSuitable: true,
     whyMatched: `Matched core stack (${matched.slice(0, 4).join(", ")}) aligned with early career development. ${fallbackReason ? `[Note: ${fallbackReason}]` : ""}`,
     applicationPriority: matchScore >= 80 ? "Apply Immediately" : "Normal Priority",
