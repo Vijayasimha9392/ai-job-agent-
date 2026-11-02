@@ -80,7 +80,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function classifyJobWithGemini(job, retryCount = 3) {
   const apiKey = (config.geminiApiKey || "").trim();
-  const model = config.geminiModel || "gemini-2.5-flash";
+  const model = config.geminiModel || "gemini-3.6-flash";
 
   const fullText = `${job.title} ${job.description}`.toLowerCase();
   const hasCoreTech = fullText.includes("java") || fullText.includes("spring") || fullText.includes("react");
