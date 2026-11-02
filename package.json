@@ -1,22 +1,32 @@
 {
   "name": "ai-job-recommendation-agent",
-  "version": "1.0.0",
-  "description": "Production-grade AI Job Recommendation Agent for an early-career Java Full Stack Developer in India",
+  "version": "1.1.0",
+  "description": "AI-powered job discovery, matching, and notification agent for early-career Java Full Stack Developers in India",
   "main": "src/index.js",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=18.18.0"
+  },
   "scripts": {
     "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
     "test": "node tests/test_pipeline.js",
-    "dev": "node --watch src/index.js"
+    "check": "node --check src/index.js",
+    "check:classifier": "node --check src/pipeline/geminiClassifier.js",
+    "check:config": "node --check src/config/env.js"
   },
   "keywords": [
-    "job-agent",
+    "ai-job-agent",
+    "job-recommendation",
     "gemini-ai",
-    "recruitment-intelligence",
     "java-full-stack",
-    "n8n",
-    "automation"
+    "spring-boot",
+    "job-search-automation",
+    "job-matching",
+    "career-automation",
+    "n8n"
   ],
-  "author": "Antigravity AI",
+  "author": "Vijayasimha Tammineni",
   "license": "MIT",
   "dependencies": {
     "axios": "^1.7.9",
