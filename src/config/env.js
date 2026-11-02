@@ -1,109 +1,271 @@
 // =====================================================================
-// Environment Variables Loader & Config Validator (Zero Dependency)
+// Environment Variables Loader & Config Validator
+// Zero external dependencies
 // =====================================================================
 
 const path = require("path");
 const fs = require("fs");
 
-// Minimal zero-dependency .env parser
+// ---------------------------------------------------------------------
+// .env Loader
+// ---------------------------------------------------------------------
+
 function loadEnvFile() {
   const envPath = path.resolve(__dirname, "../../.env");
-  if (fs.existsSync(envPath)) {
-    try {
-      const content = fs.readFileSync(envPath, "utf8");
-      for (const line of content.split("\n")) {
-        const trimmed = line.trim();
-        if (trimmed && !trimmed.startsWith("#")) {
-          const idx = trimmed.indexOf("=");
-          if (idx > 0) {
-            const key = trimmed.substring(0, idx).trim();
-            let val = trimmed.substring(idx + 1).trim();
-            if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
-              val = val.substring(1, val.length - 1);
-            }
-            if (!process.env[key]) {
-              process.env[key] = val;
-            }
-          }
-        }
+
+  if (!fs.existsSync(envPath)) {
+    return;
+  }
+
+  try {
+    const content = fs.readFileSync(envPath, "utf8");
+
+    for (const line of content.split(/\r?\n/)) {
+      const trimmed = line.trim();
+
+      if (!trimmed || trimmed.startsWith("#")) {
+        continue;
       }
-    } catch (e) {}
+
+      const equalsIndex = trimmed.indexOf("=");
+
+      if (equalsIndex <= 0) {
+        continue;
+      }
+
+      const key = trimmed.substring(0, equalsIndex).trim();
+
+      let value = trimmed.substring(equalsIndex + 1).trim();
+
+      // Remove matching single/double quotes.
+      if (
+        (value.startsWith('"') && value.endsWith('"')) ||
+        (value.startsWith("'") && value.endsWith("'"))
+      ) {
+        value = value.substring(1, value.length - 1);
+      }
+
+      // Preserve externally provided environment variables.
+      if (process.env[key] === undefined) {
+        process.env[key] = value;
+      }
+    }
+  } catch (error) {
+    console.warn(
+      `[Config] Unable to read .env file: ${error.message}`
+    );
   }
 }
 
 loadEnvFile();
 
+// ---------------------------------------------------------------------
+// Parsing Helpers
+// ---------------------------------------------------------------------
+
+function getString(name, fallback = "") {
+  const value = process.env[name];
+
+  if (value === undefined || value === null) {
+    return fallback;
+  }
+
+  return String(value).trim();
+}
+
+function getInt(name, fallback) {
+  const value = Number.parseInt(process.env[name], 10);
+
+  return Number.isFinite(value) ? value : fallback;
+}
+
+function getFloat(name, fallback) {
+  const value = Number.parseFloat(process.env[name]);
+
+  return Number.isFinite(value) ? value : fallback;
+}
+
+function getBoolean(name, fallback = false) {
+  const value = process.env[name];
+
+  if (value === undefined || value === null || value === "") {
+    return fallback;
+  }
+
+  return String(value).trim().toLowerCase() === "true";
+}
+
+// ---------------------------------------------------------------------
+// Config
+// ---------------------------------------------------------------------
+
+const candidateEmail = (
+  getString("CANDIDATE_EMAIL") ||
+  getString("ALERT_RECEIVER_EMAIL")
+).trim();
+
 const config = {
-  nodeEnv: process.env.NODE_ENV || "production",
-  allowTestJobs: process.env.ALLOW_TEST_JOBS === "true",
-  allowMockData: process.env.ALLOW_MOCK_DATA === "true",
-  port: parseInt(process.env.PORT || "3000", 10),
-  geminiApiKey: process.env.GEMINI_API_KEY || "",
-  geminiModel: process.env.GEMINI_MODEL || "gemini-3.6-flash",
-  candidateName: process.env.CANDIDATE_NAME || "Vijayasimha Tammineni",
-  candidateEmail: (process.env.CANDIDATE_EMAIL || process.env.ALERT_RECEIVER_EMAIL || "thornay7@gmail.com").trim(),
-  minMatchScore: parseInt(process.env.MIN_MATCH_SCORE || "65", 10),
-  minMatchScoreCritical: parseInt(process.env.MIN_MATCH_SCORE_CRITICAL || "60", 10),
-  minMatchScoreToEmail: parseInt(process.env.MIN_MATCH_SCORE_TO_EMAIL || "65", 10),
-  maxJobAgeHours: parseFloat(process.env.MAX_JOB_AGE_HOURS || "30"),
-  safetyBufferMinutes: parseInt(process.env.SAFETY_BUFFER_MINUTES || "15", 10),
-  timezone: process.env.TIMEZONE || "Asia/Kolkata",
+  // Application
+  nodeEnv: getString("NODE_ENV", "production"),
+  port: getInt("PORT", 3000),
 
-  // Polling Strategy (Source-specific intervals)
+  // Test / mock behavior
+  allowTestJobs: getBoolean("ALLOW_TEST_JOBS", false),
+  allowMockData: getBoolean("ALLOW_MOCK_DATA", false),
+
+  // Gemini
+  geminiApiKey: getString("GEMINI_API_KEY"),
+  geminiModel: getString(
+    "GEMINI_MODEL",
+    "gemini-3.8-flash"
+  ),
+
+  // Candidate
+  candidateName: getString(
+    "CANDIDATE_NAME",
+    "Vijayasimha Tammineni"
+  ),
+
+  // No hardcoded email recipient.
+  candidateEmail,
+
+  // Match thresholds
+  minMatchScore: getInt("MIN_MATCH_SCORE", 65),
+  minMatchScoreCritical: getInt("MIN_MATCH_SCORE_CRITICAL", 60),
+  minMatchScoreToEmail: getInt("MIN_MATCH_SCORE_TO_EMAIL", 65),
+
+  // Freshness
+  maxJobAgeHours: getFloat("MAX_JOB_AGE_HOURS", 30),
+  safetyBufferMinutes: getInt("SAFETY_BUFFER_MINUTES", 15),
+  timezone: getString("TIMEZONE", "Asia/Kolkata"),
+
+  // Scan scheduling
+  scheduleIntervalMinutes: getInt(
+    "SCHEDULE_INTERVAL_MINUTES",
+    55
+  ),
+
+  // Polling strategy
   polling: {
-    fastMinutes: parseInt(process.env.POLL_INTERVAL_FAST_MINUTES || "2", 10),
-    normalMinutes: parseInt(process.env.POLL_INTERVAL_NORMAL_MINUTES || "5", 10),
-    restrictedMinutes: parseInt(process.env.POLL_INTERVAL_RESTRICTED_MINUTES || "15", 10),
-    aggregationWindowMinutes: parseInt(process.env.AGGREGATION_WINDOW_MINUTES || "2", 10)
+    fastMinutes: getInt("POLL_INTERVAL_FAST_MINUTES", 2),
+    normalMinutes: getInt("POLL_INTERVAL_NORMAL_MINUTES", 5),
+    restrictedMinutes: getInt(
+      "POLL_INTERVAL_RESTRICTED_MINUTES",
+      15
+    ),
+    aggregationWindowMinutes: getInt(
+      "AGGREGATION_WINDOW_MINUTES",
+      2
+    )
   },
 
-  // Notification Channel Toggles
+  // Notifications
   notifications: {
-    enableEmail: process.env.ENABLE_EMAIL_NOTIFICATIONS !== "false",
-    enableTelegram: process.env.ENABLE_TELEGRAM_NOTIFICATIONS !== "false",
-    enablePush: process.env.ENABLE_PUSH_NOTIFICATIONS !== "false"
+    enableEmail: getBoolean(
+      "ENABLE_EMAIL_NOTIFICATIONS",
+      true
+    ),
+    enableTelegram: getBoolean(
+      "ENABLE_TELEGRAM_NOTIFICATIONS",
+      true
+    ),
+    enablePush: getBoolean(
+      "ENABLE_PUSH_NOTIFICATIONS",
+      true
+    )
   },
 
-  // SMTP Settings
+  // SMTP
   smtp: {
-    host: process.env.SMTP_HOST || "smtp.gmail.com",
-    port: parseInt(process.env.SMTP_PORT || "465", 10),
-    secure: process.env.SMTP_SECURE !== "false",
-    user: process.env.SMTP_USER || "",
-    pass: process.env.SMTP_PASS || "",
-    from: process.env.SMTP_FROM || "Job Hunter AI <noreply@jobhunter.ai>",
-    receiverEmail: process.env.ALERT_RECEIVER_EMAIL || process.env.CANDIDATE_EMAIL || "thornay7@gmail.com"
+    host: getString("SMTP_HOST", "smtp.gmail.com"),
+    port: getInt("SMTP_PORT", 465),
+    secure: getBoolean("SMTP_SECURE", true),
+    user: getString("SMTP_USER"),
+    pass: getString("SMTP_PASS"),
+    from: getString(
+      "SMTP_FROM",
+      "Job Hunter AI <noreply@example.com>"
+    ),
+
+    // No default/hardcoded recipient.
+    receiverEmail: (
+      getString("ALERT_RECEIVER_EMAIL") ||
+      getString("CANDIDATE_EMAIL")
+    ).trim()
   },
 
-  // Telegram Bot API
+  // Telegram
   telegram: {
-    botToken: process.env.TELEGRAM_BOT_TOKEN || "",
-    chatId: process.env.TELEGRAM_CHAT_ID || ""
+    botToken: getString("TELEGRAM_BOT_TOKEN"),
+    chatId: getString("TELEGRAM_CHAT_ID")
   },
 
-  // Firebase Cloud Messaging (Push Notifications)
+  // Firebase
   firebase: {
-    projectId: process.env.FIREBASE_PROJECT_ID || "",
-    clientEmail: process.env.FIREBASE_CLIENT_EMAIL || "",
-    privateKey: (process.env.FIREBASE_PRIVATE_KEY || "").replace(/\\n/g, "\n")
+    projectId: getString("FIREBASE_PROJECT_ID"),
+    clientEmail: getString("FIREBASE_CLIENT_EMAIL"),
+    privateKey: getString("FIREBASE_PRIVATE_KEY")
+      .replace(/\\n/g, "\n")
   },
 
-  // Database / Supabase
+  // Database
   database: {
-    useSqlite: process.env.USE_SQLITE === "true",
-    url: process.env.DATABASE_URL || process.env.SUPABASE_URL || "",
-    supabaseKey: process.env.SUPABASE_KEY || "",
-    host: process.env.PGHOST || "localhost",
-    port: parseInt(process.env.PGPORT || "5432", 10),
-    database: process.env.PGDATABASE || "jobagent_db",
-    user: process.env.PGUSER || "jobagent",
-    password: process.env.PGPASSWORD || "jobagent_pass"
+    useSqlite: getBoolean("USE_SQLITE", false),
+
+    url:
+      getString("DATABASE_URL") ||
+      getString("SUPABASE_URL"),
+
+    supabaseKey: getString("SUPABASE_KEY"),
+
+    host: getString("PGHOST", "localhost"),
+    port: getInt("PGPORT", 5432),
+    database: getString("PGDATABASE", "jobagent_db"),
+    user: getString("PGUSER", "jobagent"),
+    password: getString("PGPASSWORD", "jobagent_pass")
   },
 
-  // API Keys
-  rapidApiKey: process.env.RAPIDAPI_KEY || process.env.JSEARCH_API_KEY || "",
-  adzunaAppId: process.env.ADZUNA_APP_ID || "",
-  adzunaAppKey: process.env.ADZUNA_APP_KEY || ""
+  // Job API providers
+  rapidApiKey:
+    getString("RAPIDAPI_KEY") ||
+    getString("JSEARCH_API_KEY"),
+
+  adzunaAppId: getString("ADZUNA_APP_ID"),
+  adzunaAppKey: getString("ADZUNA_APP_KEY")
 };
+
+// ---------------------------------------------------------------------
+// Basic Config Validation
+// ---------------------------------------------------------------------
+
+if (config.port < 1 || config.port > 65535) {
+  console.warn(
+    "[Config] PORT is invalid. Expected a value between 1 and 65535."
+  );
+}
+
+if (config.maxJobAgeHours <= 0) {
+  console.warn(
+    "[Config] MAX_JOB_AGE_HOURS must be positive."
+  );
+}
+
+if (config.scheduleIntervalMinutes < 1) {
+  console.warn(
+    "[Config] SCHEDULE_INTERVAL_MINUTES must be at least 1."
+  );
+}
+
+if (!config.geminiApiKey) {
+  console.warn(
+    "[Config] GEMINI_API_KEY is not configured. Gemini evaluation and automated qualification will fail closed."
+  );
+}
+
+if (!config.candidateEmail) {
+  console.warn(
+    "[Config] CANDIDATE_EMAIL is not configured. Email notifications will not have a recipient."
+  );
+}
 
 module.exports = config;
