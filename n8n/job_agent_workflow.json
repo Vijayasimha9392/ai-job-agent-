@@ -162,7 +162,7 @@
     }
   ],
   "connections": {
-    "Schedule Trigger (Every 10 Mins)": {
+    "Schedule Trigger (Every 55 Mins)": {
       "main": [
         [
           {
@@ -237,14 +237,14 @@
       "main": [
         [
           {
-            "node": "Gemini 2.5 Flash Matcher",
+            "node": "Gemini 3.6 Flash Matcher",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Gemini 2.5 Flash Matcher": {
+    "Gemini 3.6 Flash Matcher": {
       "main": [
         [
           {
