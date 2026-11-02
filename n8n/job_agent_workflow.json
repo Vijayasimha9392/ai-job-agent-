@@ -20,74 +20,64 @@
     },
     {
       "parameters": {
-        "jsCode": "const queries = [\n  'Java Developer fresher India',\n  'Spring Boot Developer 0-2 years India',\n  'Associate Software Engineer India',\n  'Java Backend Developer junior India',\n  'Java Spring Boot React Hyderabad',\n  'Java Developer Bangalore 0-2 years'\n];\n\nreturn queries.map(q => ({ json: { query: q, timestamp: new Date().toISOString() } }));"
-      },
-      "id": "node-generate-queries",
-      "name": "Generate Search Queries",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [320, 300]
-    },
-    {
-      "parameters": {
         "url": "https://www.arbeitnow.com/api/job-board-api",
         "options": {
-          "timeout": 10000
+          "timeout": 20000
         }
       },
       "id": "node-fetch-arbeitnow",
       "name": "Fetch Arbeitnow API",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [560, 180]
+      "position": [320, 180]
     },
     {
       "parameters": {
         "url": "https://remotive.com/api/remote-jobs?category=software-dev",
         "options": {
-          "timeout": 10000
+          "timeout": 20000
         }
       },
       "id": "node-fetch-remotive",
       "name": "Fetch Remotive API",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [560, 420]
+      "position": [320, 420]
     },
     {
       "parameters": {
-        "jsCode": "// Aggregate results from all incoming source branches\nconst allItems = [];\n\n// 1. Arbeitnow items\ntry {\n  const arbeitItems = $items('Fetch Arbeitnow API');\n  if (arbeitItems && arbeitItems.length > 0) {\n    const data = arbeitItems[0].json.data || [];\n    for (const j of data) {\n      allItems.push({\n        source: 'Arbeitnow',\n        company: j.company_name,\n        title: j.title,\n        location: j.location || 'Remote',\n        workMode: j.remote ? 'Remote' : 'On-site',\n        description: j.description || '',\n        skills: j.tags || [],\n        publishedAt: j.created_at ? new Date(j.created_at * 1000).toISOString() : new Date().toISOString(),\n        applicationUrl: j.url,\n        companyCareersUrl: '',\n        salary: 'Not Disclosed',\n        jobReferenceId: j.slug\n      });\n    }\n  }\n} catch (e) {}\n\n// 2. Remotive items\ntry {\n  const remotiveItems = $items('Fetch Remotive API');\n  if (remotiveItems && remotiveItems.length > 0) {\n    const data = remotiveItems[0].json.jobs || [];\n    for (const j of data) {\n      const loc = (j.candidate_required_location || '').toLowerCase();\n      if (loc.includes('india') || loc.includes('worldwide') || loc.includes('anywhere') || !loc) {\n        allItems.push({\n          source: 'Remotive',\n          company: j.company_name,\n          title: j.title,\n          location: j.candidate_required_location || 'Remote (India / Worldwide)',\n          workMode: 'Remote',\n          description: j.description || '',\n          skills: j.tags || [],\n          publishedAt: j.publication_date ? new Date(j.publication_date).toISOString() : new Date().toISOString(),\n          applicationUrl: j.url,\n          companyCareersUrl: j.company_logo_url || '',\n          salary: j.salary || 'Not Disclosed',\n          jobReferenceId: String(j.id)\n        });\n      }\n    }\n  }\n} catch (e) {}\n\nreturn allItems.map(item => ({ json: item }));"
+        "mode": "append"
       },
       "id": "node-merge-sources",
       "name": "Merge Job Sources",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [560, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const allItems = $input.all();\nconst jobs = [];\nconst now = new Date();\nconst MAX_JOB_AGE_HOURS = 30;\n\nfunction cleanText(value) {\n  return String(value || '')\n    .replace(/<script\\b[^>]*>[\\s\\S]*?<\\/script>/gi, ' ')\n    .replace(/<style\\b[^>]*>[\\s\\S]*?<\\/style>/gi, ' ')\n    .replace(/<[^>]*>/g, ' ')\n    .replace(/&nbsp;/gi, ' ')\n    .replace(/&amp;/gi, '&')\n    .replace(/&quot;/gi, '\"')\n    .replace(/&#39;/gi, \"'\")\n    .replace(/\\s+/g, ' ')\n    .trim();\n}\n\nfunction parseDate(value) {\n  if (!value) return null;\n  let date;\n  if (typeof value === 'number') {\n    date = new Date(value < 1000000000000 ? value * 1000 : value);\n  } else {\n    const numeric = Number(value);\n    if (String(value).trim() !== '' && Number.isFinite(numeric) && numeric > 1000000000) {\n      date = new Date(numeric < 1000000000000 ? numeric * 1000 : numeric);\n    } else {\n      date = new Date(value);\n    }\n  }\n  return Number.isNaN(date.getTime()) ? null : date;\n}\n\nfunction toArray(value) {\n  if (Array.isArray(value)) return value;\n  if (typeof value === 'string') return value.split(',').map(x => x.trim()).filter(Boolean);\n  return [];\n}\n\nfor (const item of allItems) {\n  const response = item.json || {};\n  const isArbeitnow = Array.isArray(response.data);\n  const isRemotive = Array.isArray(response.jobs);\n\n  if (isArbeitnow) {\n    for (const job of response.data) {\n      jobs.push({\n        source: 'Arbeitnow',\n        company: job.company_name || job.company || 'Unknown Company',\n        title: job.title || '',\n        location: job.location || 'Unknown',\n        workMode: job.remote ? 'Remote' : 'On-site / Hybrid',\n        description: job.description || '',\n        skills: toArray(job.tags),\n        publishedAt: parseDate(job.created_at),\n        applicationUrl: job.url || '',\n        salary: job.salary || 'Not Disclosed',\n        jobReferenceId: job.slug || job.id || ''\n      });\n    }\n  }\n\n  if (isRemotive) {\n    for (const job of response.jobs) {\n      const requiredLocation = String(job.candidate_required_location || '').toLowerCase();\n      const isIndiaAllowed = !requiredLocation ||\n        requiredLocation.includes('india') ||\n        requiredLocation.includes('worldwide') ||\n        requiredLocation.includes('anywhere') ||\n        requiredLocation.includes('all countries');\n\n      if (!isIndiaAllowed) continue;\n\n      jobs.push({\n        source: 'Remotive',\n        company: job.company_name || 'Unknown Company',\n        title: job.title || '',\n        location: job.candidate_required_location || 'Remote (India / Worldwide)',\n        workMode: 'Remote',\n        description: job.description || '',\n        skills: toArray(job.tags),\n        publishedAt: parseDate(job.publication_date),\n        applicationUrl: job.url || '',\n        salary: job.salary || 'Not Disclosed',\n        jobReferenceId: String(job.id || '')\n      });\n    }\n  }\n}\n\nconst output = [];\nconst seen = new Set();\n\nfor (const job of jobs) {\n  const title = cleanText(job.title);\n  const company = cleanText(job.company);\n  const location = cleanText(job.location);\n  const description = cleanText(job.description);\n  const applicationUrl = String(job.applicationUrl || '').trim();\n  const publishedAt = job.publishedAt;\n\n  if (!title || !company || !applicationUrl || !publishedAt) continue;\n  if (!/^https?:\\/\\//i.test(applicationUrl)) continue;\n\n  const ageHours = (now.getTime() - publishedAt.getTime()) / 3600000;\n  if (ageHours < -1 || ageHours > MAX_JOB_AGE_HOURS) continue;\n\n  const normalizedKey = `${company.toLowerCase()}|${title.toLowerCase()}|${applicationUrl.split('?')[0].toLowerCase()}`;\n  if (seen.has(normalizedKey)) continue;\n  seen.add(normalizedKey);\n\n  let freshnessScore = 60;\n  let freshnessTier = '24_30_HOURS';\n  if (ageHours <= 1) {\n    freshnessScore = 100;\n    freshnessTier = '0_1_HOUR';\n  } else if (ageHours <= 3) {\n    freshnessScore = 95;\n    freshnessTier = '1_3_HOURS';\n  } else if (ageHours <= 6) {\n    freshnessScore = 90;\n    freshnessTier = '3_6_HOURS';\n  } else if (ageHours <= 12) {\n    freshnessScore = 85;\n    freshnessTier = '6_12_HOURS';\n  } else if (ageHours <= 24) {\n    freshnessScore = 75;\n    freshnessTier = '12_24_HOURS';\n  }\n\n  output.push({\n    json: {\n      source: job.source,\n      company,\n      title,\n      location,\n      workMode: job.workMode,\n      description: description.slice(0, 12000),\n      skills: job.skills,\n      publishedAt: publishedAt.toISOString(),\n      discoveredAt: now.toISOString(),\n      jobAgeHours: Number(ageHours.toFixed(2)),\n      freshnessScore,\n      freshnessTier,\n      applicationUrl,\n      salary: job.salary,\n      jobReferenceId: job.jobReferenceId\n    }\n  });\n}\n\nreturn output;"
+      },
+      "id": "node-normalize-freshness",
+      "name": "Normalize Jobs & Freshness Filter",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [800, 300]
     },
     {
       "parameters": {
-        "jsCode": "const crypto = require('crypto');\nconst now = new Date();\nconst results = [];\n\nfor (const item of $input.all()) {\n  const raw = item.json;\n  \n  // 1. Text sanitization\n  const cleanText = (str) => (str || '').replace(/<[^>]*>/g, ' ').replace(/\\s+/g, ' ').trim();\n  const company = cleanText(raw.company || 'Confidential');\n  const title = cleanText(raw.title || 'Software Developer');\n  const location = cleanText(raw.location || 'India');\n  const description = cleanText(raw.description || '');\n  const applicationUrl = raw.applicationUrl || raw.url || '';\n  \n  // 2. Freshness calculation (Deterministic in code)\n  let publishedAt = raw.publishedAt ? new Date(raw.publishedAt) : null;\n  let freshnessVerified = Boolean(publishedAt && !isNaN(publishedAt.getTime()));\n  let jobAgeHours = null;\n  let freshnessScore = 0;\n  let freshnessTier = 'UNVERIFIED';\n  let freshnessLabel = 'Unknown';\n\n  if (freshnessVerified) {\n    const diffMs = Math.max(0, now.getTime() - publishedAt.getTime());\n    jobAgeHours = parseFloat((diffMs / (1000 * 60 * 60)).toFixed(2));\n    \n    // 30-hour rule check\n    if (jobAgeHours > 30.0) {\n      continue; // REJECT STALE JOBS (> 30 Hours)\n    }\n    \n    if (jobAgeHours <= 1.0) { freshnessScore = 100; freshnessTier = 'URGENT_0_1H'; freshnessLabel = 'Urgent (< 1h ago)'; }\n    else if (jobAgeHours <= 3.0) { freshnessScore = 95; freshnessTier = 'PRIORITY_1_3H'; freshnessLabel = 'Posted 1-3h ago'; }\n    else if (jobAgeHours <= 6.0) { freshnessScore = 90; freshnessTier = 'PRIORITY_3_6H'; freshnessLabel = 'Posted 3-6h ago'; }\n    else if (jobAgeHours <= 12.0) { freshnessScore = 85; freshnessTier = 'PRIORITY_6_12H'; freshnessLabel = 'Posted 6-12h ago'; }\n    else if (jobAgeHours <= 24.0) { freshnessScore = 75; freshnessTier = 'PRIORITY_12_24H'; freshnessLabel = 'Posted Today (< 24h)'; }\n    else { freshnessScore = 60; freshnessTier = 'PRIORITY_24_30H'; freshnessLabel = 'Posted 24-30h ago'; }\n  } else {\n    // Drop unverified publication dates to preserve freshness integrity\n    continue;\n  }\n\n  // 3. SHA-256 Fingerprint generation\n  const normComp = company.toLowerCase().replace(/[^a-z0-9\\s]/g, '').trim();\n  const normTitle = title.toLowerCase().replace(/[^a-z0-9\\s]/g, '').trim();\n  const refId = String(raw.jobReferenceId || '').trim().toLowerCase();\n  const cleanUrl = applicationUrl.split('?')[0].trim().toLowerCase();\n  \n  const canonicalString = (refId && refId.length > 2)\n    ? `company:${normComp}|title:${normTitle}|ref:${refId}`\n    : `company:${normComp}|title:${normTitle}|url:${cleanUrl}`;\n    \n  const jobFingerprint = crypto.createHash('sha256').update(canonicalString).digest('hex');\n  const jobId = 'job_' + jobFingerprint.substring(0, 16);\n\n  results.push({\n    json: {\n      jobId,\n      jobFingerprint,\n      source: raw.source || 'Aggregator',\n      company,\n      title,\n      location,\n      workMode: raw.workMode || 'On-site',\n      employmentType: raw.employmentType || 'Full-time',\n      description,\n      skills: raw.skills || [],\n      publishedAt: publishedAt.toISOString(),\n      discoveredAt: now.toISOString(),\n      jobAgeHours,\n      freshnessScore,\n      freshnessTier,\n      freshnessLabel,\n      freshnessVerified: true,\n      applicationUrl,\n      companyCareersUrl: raw.companyCareersUrl || '',\n      salary: raw.salary || 'Not Disclosed',\n      jobReferenceId: raw.jobReferenceId || ''\n    }\n  });\n}\n\nreturn results;"
-      },
-      "id": "node-normalize-and-freshness",
-      "name": "Normalize, Freshness & Hash",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [1020, 300]
-    },
-    {
-      "parameters": {
-        "jsCode": "const SENIORITY_BLACKLIST = ['senior', 'sr.', 'sr ', 'lead', 'principal', 'staff engineer', 'architect', 'engineering manager', 'manager', 'director', 'vp', 'tech lead'];\nconst NON_DEV_BLACKLIST = ['bpo', 'call center', 'customer support', 'sales executive', 'marketing', 'hr executive', 'accountant', 'manual tester', 'data entry', 'desktop support', 'network engineer', 'mechanical', 'civil'];\n\nconst passedItems = [];\n\nfor (const item of $input.all()) {\n  const job = item.json;\n  const titleLower = job.title.toLowerCase();\n  const descLower = job.description.toLowerCase();\n  \n  // Check seniority in title\n  const isSenior = SENIORITY_BLACKLIST.some(term => new RegExp(`\\\\b${term.replace('.', '\\\\.')}\\\\b`, 'i').test(titleLower));\n  if (isSenior) continue;\n  \n  // Check non-dev roles\n  const isNonDev = NON_DEV_BLACKLIST.some(term => new RegExp(`\\\\b${term}\\\\b`, 'i').test(titleLower));\n  if (isNonDev) continue;\n  \n  // Check explicit 3+ years experience requirement in text\n  const expMatch = `${titleLower} ${descLower}`.match(/(?:minimum|requires?|mandatory|at least)\\s+(\\d+)\\+?\\s*years?/i);\n  if (expMatch && parseInt(expMatch[1], 10) >= 3) continue;\n  \n  // Must have application URL\n  if (!job.applicationUrl || job.applicationUrl.length < 5) continue;\n  \n  passedItems.push(item);\n}\n\nreturn passedItems;"
+        "jsCode": "const SENIORITY_BLACKLIST = [\n  'senior', 'sr.', 'lead', 'principal', 'staff engineer',\n  'architect', 'engineering manager', 'director', 'vp', 'tech lead'\n];\n\nconst NON_DEVELOPER_BLACKLIST = [\n  'customer support', 'call center', 'sales executive', 'marketing',\n  'hr executive', 'accountant', 'data entry', 'desktop support',\n  'network engineer', 'mechanical engineer', 'civil engineer'\n];\n\nconst output = [];\n\nfor (const item of $input.all()) {\n  const job = item.json || {};\n  const title = String(job.title || '').toLowerCase();\n  const description = String(job.description || '').toLowerCase();\n\n  if (SENIORITY_BLACKLIST.some(term => title.includes(term))) continue;\n  if (NON_DEVELOPER_BLACKLIST.some(term => title.includes(term))) continue;\n\n  const experienceText = `${title} ${description}`;\n  const yearsMatches = [...experienceText.matchAll(/(?:minimum|min\\.?|at least|required|requires)\\s*(\\d+)\\s*\\+?\\s*years?/gi)];\n  if (yearsMatches.some(match => Number(match[1]) >= 3)) continue;\n\n  if (!job.applicationUrl || !job.applicationUrl.startsWith('http')) continue;\n\n  const hasRelevantKeyword = /java|spring|backend|software engineer|software developer|full.?stack|programmer|application developer/i.test(title);\n  if (!hasRelevantKeyword) continue;\n\n  output.push({ json: job });\n}\n\nreturn output;"
       },
       "id": "node-pre-ai-filter",
       "name": "Pre-AI Rule-Based Filter",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1240, 300]
+      "position": [1040, 300]
     },
     {
       "parameters": {
         "method": "POST",
-        "url": "=https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key={{$env.GEMINI_API_KEY}}",
+        "url": "=https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key={{$env.GEMINI_API_KEY}}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -99,26 +89,23 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"contents\": [\n    {\n      \"role\": \"user\",\n      \"parts\": [\n        {\n          \"text\": \"Evaluate this job posting for an early-career Java Full Stack Developer (2025 B.Tech CSE Graduate, 8-12 months exp with Java 17, Spring Boot, REST APIs, MySQL, React.js):\\n\\nTitle: {{ $json.title }}\\nCompany: {{ $json.company }}\\nLocation: {{ $json.location }} ({{ $json.workMode }})\\nPublished: {{ $json.publishedAt }} (Age: {{ $json.jobAgeHours }}h)\\nDescription: {{ $json.description.slice(0, 3500) }}\\n\\nReturn STRICT JSON schema: {\\\"isEligible\\\": boolean, \\\"rejectReason\\\": string|null, \\\"matchScore\\\": number (0-100), \\\"matchLevel\\\": string, \\\"roleMatch\\\": number, \\\"skillsMatch\\\": number, \\\"experienceMatch\\\": number, \\\"locationMatch\\\": number, \\\"educationMatch\\\": number, \\\"freshnessScore\\\": number, \\\"matchedSkills\\\": string[], \\\"missingSkills\\\": string[], \\\"experienceRequired\\\": string, \\\"candidateExperienceSuitable\\\": boolean, \\\"whyMatched\\\": string, \\\"applicationPriority\\\": string, \\\"confidence\\\": number}\"\n        }\n      ]\n    }\n  ],\n  \"systemInstruction\": {\n    \"parts\": [\n      {\n        \"text\": \"You are an expert technical recruiter and software-engineering job matching AI for an early-career Java Full Stack Developer in India. Strictly evaluate suitability for 0-2 years / freshers with Java, Spring Boot, REST APIs, MySQL, and React. Reject senior roles and 3+ years mandatory experience. Return strictly valid JSON only.\"\n      }\n    ]\n  },\n  \"generationConfig\": {\n    \"temperature\": 0.1,\n    \"responseMimeType\": \"application/json\"\n  }\n}",
-        "options": {
-          "timeout": 25000
-        }
+        "jsonBody": "={{ { contents: [{ role: 'user', parts: [{ text: 'Evaluate this job for an early-career Java Full Stack Developer in India. Candidate: B.Tech CSE 2025 graduate, approximately 8 months experience, Java, Spring Boot, REST APIs, MySQL, React, JavaScript.\\n\\nJob Title: ' + $json.title + '\\nCompany: ' + $json.company + '\\nLocation: ' + $json.location + '\\nWork mode: ' + $json.workMode + '\\nPosted: ' + $json.publishedAt + '\\nAge in hours: ' + $json.jobAgeHours + '\\nDescription: ' + $json.description.slice(0, 5000) + '\\n\\nReturn an accurate JSON evaluation. Reject jobs requiring 3+ years, senior roles, unrelated roles, or skills far outside this candidate profile.' }] }], systemInstruction: { parts: [{ text: 'You are a strict technical recruiter evaluating job suitability. Never invent job requirements. If information is missing, use conservative values. Return JSON only.' }] }, generationConfig: { temperature: 0.1, responseMimeType: 'application/json', responseSchema: { type: 'OBJECT', properties: { isEligible: { type: 'BOOLEAN' }, rejectReason: { type: 'STRING' }, matchScore: { type: 'INTEGER' }, matchLevel: { type: 'STRING' }, roleMatch: { type: 'INTEGER' }, skillsMatch: { type: 'INTEGER' }, experienceMatch: { type: 'INTEGER' }, locationMatch: { type: 'INTEGER' }, educationMatch: { type: 'INTEGER' }, matchedSkills: { type: 'ARRAY', items: { type: 'STRING' } }, missingSkills: { type: 'ARRAY', items: { type: 'STRING' } }, experienceRequired: { type: 'STRING' }, candidateExperienceSuitable: { type: 'BOOLEAN' }, whyMatched: { type: 'STRING' }, applicationPriority: { type: 'STRING' }, confidence: { type: 'INTEGER' } }, required: ['isEligible', 'matchScore', 'matchLevel', 'candidateExperienceSuitable', 'whyMatched', 'confidence'] } } } }}"
       },
       "id": "node-gemini-matcher",
-      "name": "Gemini 3.6 Flash Matcher",
+      "name": "Gemini Job Matcher",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1460, 300]
+      "position": [1280, 300]
     },
     {
       "parameters": {
-        "jsCode": "const results = [];\n\nconst inputItems = $input.all();\nconst parentItems = $('Pre-AI Rule-Based Filter').all();\n\nfor (let i = 0; i < inputItems.length; i++) {\n  const httpRes = inputItems[i].json || {};\n  const parentJob = parentItems[i]?.json || {};\n\n  let evaluation;\n\n  try {\n    const responseText = httpRes.candidates?.[0]?.content?.parts?.[0]?.text;\n\n    if (typeof responseText !== 'string' || responseText.trim() === '') {\n      throw new Error('Gemini response did not contain evaluation text.');\n    }\n\n    evaluation = JSON.parse(responseText);\n\n    if (\n      typeof evaluation !== 'object' ||\n      evaluation === null ||\n      typeof evaluation.isEligible !== 'boolean' ||\n      typeof evaluation.matchScore !== 'number' ||\n      !Number.isFinite(evaluation.matchScore) ||\n      evaluation.matchScore < 0 ||\n      evaluation.matchScore > 100\n    ) {\n      throw new Error('Gemini response did not match the expected evaluation schema.');\n    }\n  } catch (err) {\n    evaluation = {\n      isEligible: false,\n      rejectReason: 'Gemini evaluation failed or returned an invalid response.',\n      matchScore: 0,\n      matchLevel: 'Not Evaluated',\n      roleMatch: 0,\n      skillsMatch: 0,\n      experienceMatch: 0,\n      locationMatch: 0,\n      educationMatch: 0,\n      freshnessScore: 0,\n      matchedSkills: [],\n      missingSkills: [],\n      experienceRequired: 'Unknown',\n      candidateExperienceSuitable: false,\n      whyMatched: 'Job was not evaluated successfully. Manual review required.',\n      applicationPriority: 'Do Not Apply',\n      confidence: 0\n    };\n  }\n\n  const matchScore = evaluation.matchScore;\n  const jobAgeHours = Number.isFinite(parentJob.jobAgeHours)\n    ? parentJob.jobAgeHours\n    : 999;\n\n  let priorityLevel = 'STORE_ONLY';\n  let badgeText = `${evaluation.matchLevel || 'Match'} (${matchScore}%)`;\n  let badgeColor = '#2563eb';\n  let shouldEmail = false;\n\n  if (evaluation.isEligible === true) {\n    if (jobAgeHours <= 3.0 && matchScore >= 75) {\n      priorityLevel = 'URGENT';\n      badgeText = '🔥 URGENT ALERT (< 3h)';\n      badgeColor = '#dc2626';\n      shouldEmail = true;\n    } else if (jobAgeHours <= 6.0 && matchScore >= 85) {\n      priorityLevel = 'HIGH_PRIORITY';\n      badgeText = '⚡ HIGH PRIORITY (< 6h)';\n      badgeColor = '#ea580c';\n      shouldEmail = true;\n    } else if (matchScore >= 65) {\n      priorityLevel = matchScore >= 85\n        ? 'EXCELLENT'\n        : (matchScore >= 75 ? 'STRONG' : 'GOOD');\n      badgeText = `✨ ${evaluation.matchLevel || 'Match'} (${matchScore}%)`;\n      badgeColor = matchScore >= 85 ? '#16a34a' : '#2563eb';\n      shouldEmail = true;\n    }\n  }\n\n  results.push({\n    json: {\n      ...parentJob,\n      evaluation,\n      matchScore,\n      priorityLevel,\n      badgeText,\n      badgeColor,\n      shouldEmail\n    }\n  });\n}\n\nreturn results;"
+        "jsCode": "const responseItems = $input.all();\nconst originalJobs = $('Pre-AI Rule-Based Filter').all();\nconst output = [];\n\nfor (let i = 0; i < responseItems.length; i++) {\n  const response = responseItems[i].json || {};\n  const job = originalJobs[i]?.json || {};\n  let evaluation = null;\n  let evaluationSucceeded = false;\n\n  try {\n    const text = response.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('');\n    if (!text) throw new Error('Gemini returned no content');\n\n    evaluation = JSON.parse(text);\n    if (typeof evaluation.isEligible !== 'boolean') throw new Error('Missing isEligible');\n    if (!Number.isFinite(Number(evaluation.matchScore))) throw new Error('Invalid matchScore');\n\n    evaluation.matchScore = Math.max(0, Math.min(100, Number(evaluation.matchScore)));\n    evaluation.confidence = Math.max(0, Math.min(100, Number(evaluation.confidence || 0)));\n    evaluationSucceeded = true;\n  } catch (error) {\n    evaluation = {\n      isEligible: false,\n      rejectReason: 'Gemini evaluation failed. Manual review required.',\n      matchScore: 0,\n      matchLevel: 'Not Evaluated',\n      matchedSkills: [],\n      missingSkills: [],\n      candidateExperienceSuitable: false,\n      whyMatched: 'No notification will be sent because evaluation was unsuccessful.',\n      confidence: 0\n    };\n  }\n\n  const matchScore = evaluation.matchScore;\n  const jobAgeHours = Number(job.jobAgeHours || 999);\n  const eligible = evaluationSucceeded && evaluation.isEligible === true && evaluation.candidateExperienceSuitable === true && matchScore >= 65;\n\n  let priorityLevel = 'STORE_ONLY';\n  let shouldEmail = false;\n\n  if (eligible) {\n    if (jobAgeHours <= 3 && matchScore >= 75) {\n      priorityLevel = 'URGENT';\n      shouldEmail = true;\n    } else if (jobAgeHours <= 6 && matchScore >= 85) {\n      priorityLevel = 'HIGH_PRIORITY';\n      shouldEmail = true;\n    } else if (matchScore >= 65) {\n      priorityLevel = matchScore >= 85 ? 'EXCELLENT' : matchScore >= 75 ? 'STRONG' : 'GOOD';\n      shouldEmail = true;\n    }\n  }\n\n  output.push({\n    json: {\n      ...job,\n      evaluation,\n      evaluationSucceeded,\n      matchScore,\n      priorityLevel,\n      shouldEmail\n    }\n  });\n}\n\nreturn output;"
       },
-      "id": "node-parse-and-score",
+      "id": "node-parse-score",
       "name": "Parse Gemini & Score Priority",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1680, 300]
+      "position": [1520, 300]
     },
     {
       "parameters": {
@@ -131,49 +118,55 @@
           ]
         }
       },
-      "id": "node-filter-should-email",
-      "name": "Filter: Should Email?",
+      "id": "node-filter-email",
+      "name": "Filter Eligible Jobs",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [1900, 300]
+      "position": [1740, 300]
     },
     {
       "parameters": {
-        "jsCode": "const job = $json;\nconst evalData = job.evaluation || {};\nconst matchedChips = (evalData.matchedSkills || []).map(s => `<span style=\"display:inline-block;background:#dcfce7;color:#166534;font-size:12px;font-weight:600;padding:3px 8px;border-radius:6px;margin:2px;\">✓ ${s}</span>`).join(' ');\n\nconst htmlBody = `\n<div style=\"font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:620px;margin:0 auto;background:#fff;border-radius:12px;border:1px solid #e2e8f0;overflow:hidden;\">\n  <div style=\"background:#0f172a;color:#fff;padding:24px;\">\n    <div style=\"display:inline-block;padding:4px 12px;border-radius:9999px;font-size:12px;font-weight:700;background:${job.badgeColor};color:#fff;margin-bottom:10px;\">${job.badgeText}</div>\n    <h1 style=\"margin:0 0 6px 0;font-size:20px;\">${job.title}</h1>\n    <p style=\"margin:0;color:#94a3b8;font-size:14px;\">${job.company} &bull; ${job.location} (${job.workMode})</p>\n  </div>\n  <div style=\"background:#f8fafc;padding:16px 24px;border-bottom:1px solid #e2e8f0;\">\n    <span style=\"font-size:26px;font-weight:800;color:#2563eb;\">${job.matchScore}/100</span>\n    <span style=\"font-size:13px;color:#64748b;margin-left:8px;font-weight:600;\">${evalData.matchLevel || 'Match'} &bull; Posted ${job.jobAgeHours}h ago</span>\n  </div>\n  <div style=\"padding:24px;\">\n    <div style=\"font-size:12px;font-weight:700;text-transform:uppercase;color:#64748b;margin-bottom:6px;\">Why This Job Matches</div>\n    <div style=\"background:#eff6ff;border-left:4px solid #3b82f6;padding:12px 16px;border-radius:4px;color:#1e3a8a;font-size:14px;margin-bottom:20px;\">${evalData.whyMatched || 'Strong technical match with Java Full Stack qualifications.'}</div>\n    \n    <div style=\"font-size:12px;font-weight:700;text-transform:uppercase;color:#64748b;margin-bottom:6px;\">Matched Skills</div>\n    <div style=\"margin-bottom:20px;\">${matchedChips}</div>\n    \n    <div style=\"text-align:center;padding:16px 0;\">\n      <a href=\"${job.applicationUrl}\" style=\"background:#2563eb;color:#ffffff;font-weight:700;font-size:16px;text-decoration:none;padding:14px 28px;border-radius:8px;display:inline-block;\" target=\"_blank\">🚀 Apply Directly on Official Portal</a>\n    </div>\n  </div>\n  <div style=\"background:#f8fafc;padding:14px;border-top:1px solid #e2e8f0;text-align:center;font-size:12px;color:#b91c1c;font-weight:700;\">\n    ⚡ Apply as early as possible because this job was recently posted.\n  </div>\n</div>`;\n\nlet subject = `🚨 New Job: ${job.title} | ${job.company} | ${job.matchScore}% Match`;\nif (job.priorityLevel === 'URGENT') subject = `🔥 Apply Now: ${job.title} at ${job.company} | Posted < 3h ago`;\nelse if (job.priorityLevel === 'HIGH_PRIORITY') subject = `⚡ High Priority: ${job.title} at ${job.company} | ${job.matchScore}% Match`;\n\nreturn {\n  json: {\n    ...job,\n    emailSubject: subject,\n    emailHtml: htmlBody\n  }\n};"
+        "jsCode": "const job = $json;\nconst evaluation = job.evaluation || {};\n\nfunction escapeHtml(value) {\n  return String(value || '').replace(/[&<>\\\"']/g, ch => ({\n    '&': '&amp;', '<': '&lt;', '>': '&gt;', '\\\"': '&quot;', \"'\": '&#39;'\n  }[ch]));\n}\n\nconst matchedSkills = (evaluation.matchedSkills || [])\n  .map(skill => `<span style=\"display:inline-block;background:#dcfce7;color:#166534;padding:4px 8px;border-radius:5px;margin:3px;\">✓ ${escapeHtml(skill)}</span>`)\n  .join(' ');\n\nconst priority = job.priorityLevel === 'URGENT' ? '🔥 URGENT' :\n  job.priorityLevel === 'HIGH_PRIORITY' ? '⚡ HIGH PRIORITY' : '✨ MATCHED JOB';\n\nconst html = `\n<div style=\"font-family:Arial,sans-serif;max-width:650px;margin:auto;border:1px solid #ddd;border-radius:12px;overflow:hidden;\">\n  <div style=\"background:#0f172a;color:white;padding:24px;\">\n    <h2 style=\"margin:0 0 8px;\">${escapeHtml(job.title)}</h2>\n    <p style=\"margin:0;color:#cbd5e1;\">${escapeHtml(job.company)} | ${escapeHtml(job.location)} | ${escapeHtml(job.workMode)}</p>\n    <p style=\"margin-top:12px;font-weight:bold;\">${priority}</p>\n  </div>\n  <div style=\"padding:24px;\">\n    <h2 style=\"color:#2563eb;\">${job.matchScore}/100 Match</h2>\n    <p><strong>Posted:</strong> ${job.jobAgeHours} hours ago</p>\n    <p><strong>Salary:</strong> ${escapeHtml(job.salary || 'Not Disclosed')}</p>\n    <h3>Why it matches</h3>\n    <p>${escapeHtml(evaluation.whyMatched || 'Review the job details and requirements.')}</p>\n    <h3>Matched skills</h3>\n    <div>${matchedSkills || 'No matched skills listed.'}</div>\n    <p style=\"margin-top:24px;text-align:center;\">\n      <a href=\"${escapeHtml(job.applicationUrl)}\" target=\"_blank\" rel=\"noopener noreferrer\" style=\"background:#2563eb;color:white;padding:14px 24px;text-decoration:none;border-radius:8px;font-weight:bold;\">View Job & Apply</a>\n    </p>\n  </div>\n  <div style=\"background:#f8fafc;padding:14px;text-align:center;font-size:12px;color:#64748b;\">AI Job Recommendation Agent | Always verify details on the employer's official portal.</div>\n</div>`;\n\nconst subjectPrefix = job.priorityLevel === 'URGENT' ? '🔥 Apply Soon' :\n  job.priorityLevel === 'HIGH_PRIORITY' ? '⚡ High Priority' : 'New Job Match';\n\nreturn {\n  json: {\n    ...job,\n    emailSubject: `${subjectPrefix}: ${job.title} at ${job.company} (${job.matchScore}% Match)`,\n    emailHtml: html\n  }\n};"
       },
-      "id": "node-generate-email-html",
+      "id": "node-email-html",
       "name": "Generate Email HTML",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [2120, 240]
+      "position": [1960, 220]
     },
     {
       "parameters": {
-        "fromEmail": "={{ $env.SMTP_FROM || 'Job Hunter AI <noreply@jobhunter.ai>' }}",
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $env.CANDIDATE_EMAIL }}",
+              "operation": "notEmpty"
+            }
+          ]
+        }
+      },
+      "id": "node-check-email",
+      "name": "Check Candidate Email Configured",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2180, 220]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $env.SMTP_FROM || 'Job Agent <noreply@example.com>' }}",
         "toEmail": "={{ $env.CANDIDATE_EMAIL }}",
         "subject": "={{ $json.emailSubject }}",
         "html": "={{ $json.emailHtml }}"
       },
-      "id": "node-send-email-alert",
+      "id": "node-send-email",
       "name": "Send Email Alert",
       "type": "n8n-nodes-base.emailSend",
       "typeVersion": 2.1,
-      "position": [2340, 240]
+      "position": [2400, 220]
     }
   ],
   "connections": {
     "Schedule Trigger (Every 55 Mins)": {
-      "main": [
-        [
-          {
-            "node": "Generate Search Queries",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Generate Search Queries": {
       "main": [
         [
           {
@@ -206,7 +199,7 @@
           {
             "node": "Merge Job Sources",
             "type": "main",
-            "index": 0
+            "index": 1
           }
         ]
       ]
@@ -215,14 +208,14 @@
       "main": [
         [
           {
-            "node": "Normalize, Freshness & Hash",
+            "node": "Normalize Jobs & Freshness Filter",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Normalize, Freshness & Hash": {
+    "Normalize Jobs & Freshness Filter": {
       "main": [
         [
           {
@@ -237,14 +230,14 @@
       "main": [
         [
           {
-            "node": "Gemini 3.6 Flash Matcher",
+            "node": "Gemini Job Matcher",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Gemini 3.6 Flash Matcher": {
+    "Gemini Job Matcher": {
       "main": [
         [
           {
@@ -259,14 +252,14 @@
       "main": [
         [
           {
-            "node": "Filter: Should Email?",
+            "node": "Filter Eligible Jobs",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Filter: Should Email?": {
+    "Filter Eligible Jobs": {
       "main": [
         [
           {
@@ -274,10 +267,22 @@
             "type": "main",
             "index": 0
           }
-        ]
+        ],
+        []
       ]
     },
     "Generate Email HTML": {
+      "main": [
+        [
+          {
+            "node": "Check Candidate Email Configured",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Candidate Email Configured": {
       "main": [
         [
           {
@@ -285,8 +290,14 @@
             "type": "main",
             "index": 0
           }
-        ]
+        ],
+        []
       ]
     }
-  }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1"
 }
