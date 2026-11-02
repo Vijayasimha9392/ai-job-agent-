@@ -179,7 +179,7 @@ async function runScanCycle() {
       errors
     });
 
-    console.log(`\n🎉 [55-Minute Cycle Complete] Ingested: ${rawListings.length} | Fresh (<40h): ${freshCount} | Pre-pass: ${prePassCount} | AI-Evaluated: ${evaluatedCount} | Matching (≥${config.minMatchScore}%): ${qualifiedJobs.length}`);
+    console.log(`\n🎉 [55-Minute Cycle Complete] Ingested: ${rawListings.length} | Fresh (<30h): ${freshCount} | Pre-pass: ${prePassCount} | AI-Evaluated: ${evaluatedCount} | Matching (≥${config.minMatchScore}%): ${qualifiedJobs.length}`);
     return { success: true, count: qualifiedJobs.length };
   } catch (err) {
     console.error(`💥 [Cycle Error] Critical error: ${err.message}`, err.stack);
